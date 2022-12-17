@@ -3,8 +3,15 @@
 #include <linux/fs.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/spinlock.h>
+#include <linux/slab.h>
 
 #include "simplefs.h"
+
+/* spin locks for hashtable */
+struct spinlock *test_spin_lock;
+
+
 
 /* Mount a simplefs partition */
 struct dentry *simplefs_mount(struct file_system_type *fs_type,
@@ -39,8 +46,15 @@ static struct file_system_type simplefs_file_system_type = {
     .next = NULL,
 };
 
+
 static int __init simplefs_init(void)
 {
+    pr_info("loading simplefs\n");
+
+   test_spin_lock = kmalloc(sizeof(struct spinlock), GFP_KERNEL);
+   /* initializes the spin lock */
+    spin_lock_init(test_spin_lock);
+
     int ret = simplefs_init_inode_cache();
     if (ret) {
         pr_err("inode cache creation failed\n");
@@ -54,6 +68,7 @@ static int __init simplefs_init(void)
     }
 
     pr_info("module loaded\n");
+
 end:
     return ret;
 }

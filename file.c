@@ -5,9 +5,119 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/mpage.h>
-
+#include <linux/uio.h>
+#include <linux/hashtable.h>
+#include <linux/slab.h>
+#include <linux/spinlock.h>
 #include "bitmap.h"
+
 #include "simplefs.h"
+
+
+int counter = 0;
+
+struct inode_item {
+	unsigned long i_ino;
+	int pagenum;
+	int state;
+	struct inode * inode;	
+	struct address_space *mapping;
+	struct hlist_node myhash_list;
+};
+/* spin locks for hashtable */
+//https://stackoverflow.com/questions/6792930/how-do-i-share-a-global-variable-between-c-files
+extern struct spinlock *test_spin_lock;
+
+
+//struct inode_item;
+//https://lwn.net/Articles/510202/
+
+/* hashmap for inode msi states */
+//8 bits = 256 buckets
+DEFINE_HASHTABLE(inode_msi_table, 8); 
+
+
+//adds page to inode hashmap
+static void hash_inode_page(int inodenum, int pagenum, struct address_space *mapping, int state) {
+	pr_info("adding inode %d page %d to hash", inodenum, pagenum);
+	//malloc an inode item and add it to the hashmap	
+	//
+	//refer more to Documentation/kernel-hacking/hacking.rst
+	struct inode_item * newinode = kmalloc(sizeof(struct inode_item), GFP_KERNEL);
+	newinode->i_ino = inodenum;
+	newinode->pagenum = pagenum;
+	newinode->mapping = mapping;
+	newinode->state = state;
+	//how does it get the inode_item struct if we just pass the node in?
+	spin_lock(test_spin_lock);
+	hash_add(inode_msi_table, &(newinode->myhash_list), inodenum);
+	spin_unlock(test_spin_lock);
+}
+
+
+//https://kernelnewbies.org/FAQ/Hashtables
+//returns inode_item if the page is in the hashmap
+static struct inode_item * pageinhashmap(unsigned long i_ino, int pagenum) {
+	struct inode_item *tempinode;
+	int i = i_ino;
+
+	//TODO make sure that page is still valid, and hasn't been removed from cache
+
+	//locking the spin lock
+	spin_lock(test_spin_lock);
+
+	hash_for_each(inode_msi_table, i, tempinode, myhash_list) {
+		if(tempinode->i_ino == i_ino && tempinode->pagenum == pagenum){
+			//unlocking the spin lock
+			spin_unlock(test_spin_lock);
+			return tempinode; //current;
+		}
+	}	
+
+	//unlocking the spin lock
+	spin_unlock(test_spin_lock);
+
+	return NULL; //NULL;
+
+}
+
+
+
+//Caller has to have inode lock
+//before calling this
+static bool invalidatepage(unsigned long i_ino, int pagenum){
+
+	struct inode_item* inodecheck = pageinhashmap(i_ino, pagenum);
+	if (inodecheck != NULL){
+		void *pagep;
+		struct address_space *mapping = inodecheck->mapping;
+		spin_lock_irq(&mapping->tree_lock);
+
+		//delete page from page cache
+		//trying to mess with stuff from the page tree
+		//this is stolen from find_get_entry in filemap.c
+		//spin locks stolen from fs/nilfs2/page.c 
+		pagep = radix_tree_lookup_slot(&mapping->page_tree, pagenum);
+		if(pagep){
+			radix_tree_delete(&mapping->page_tree, pagenum);
+			mapping->nrpages--; 
+		}
+
+		//delete page from the hashmap
+		hash_del(&(inodecheck->myhash_list));
+		spin_unlock_irq(&mapping->tree_lock);
+		pr_info("invalidated pagd page");
+
+		return true;
+	}else{
+		pr_info("no page to invalidate");
+		return false;
+	}
+
+}
+
+
+
 
 /*
  * Map the buffer_head passed in argument with the iblock-th block of the file
@@ -77,12 +187,36 @@ brelse_index:
     return ret;
 }
 
+static void performcoherence(struct inode * inode, int page, struct address_space * mapping, int reqstate) {
+    struct inode_item * temp = pageinhashmap(inode->i_ino, page);
+    if(temp == NULL){
+	pr_info("page number %d for inode %d being added to hashmap", page, inode->i_ino);
+	//if not then add it
+	hash_inode_page(inode->i_ino, page, mapping, 0);
+
+    }else{
+	if(temp->state >= reqstate){
+		pr_info("page number %d had sufficient state", page);	
+	}else{
+		pr_info("page number %d had INsufficient state", page);	
+		//TODO switch communication would occur here
+		temp->state = reqstate;
+	}
+
+    }
+} 
 /*
  * Called by the page cache to read a page from the physical disk and map it in
  * memory.
  */
 static int simplefs_readpage(struct file *file, struct page *page)
 {
+    pr_info("******reading page number %d", page->index);
+    struct address_space *mapping = file->f_mapping; 
+    struct inode *inode = mapping->host;
+    int temp = page->index;
+    performcoherence(inode, temp, mapping, 1);
+
     return mpage_readpage(page, simplefs_file_get_block);
 }
 
@@ -108,6 +242,16 @@ static int simplefs_write_begin(struct file *file,
                                 struct page **pagep,
                                 void **fsdata)
 {
+
+    unsigned int currentpage = pos / PAGE_SIZE;
+    pr_info("write begin page number %d, for inode %d", currentpage, (file->f_inode)->i_ino);
+    struct inode *inode = file->f_inode;
+
+    //need to do the currentpage thing and not pass in the 
+    //actual page since it causes null dereference stuff
+    performcoherence(inode, currentpage, mapping, 2);
+
+
     struct simplefs_sb_info *sbi = SIMPLEFS_SB(file->f_inode->i_sb);
     int err;
     uint32_t nr_allocs = 0;
@@ -149,6 +293,9 @@ static int simplefs_write_end(struct file *file,
     struct simplefs_inode_info *ci = SIMPLEFS_INODE(inode);
     struct super_block *sb = inode->i_sb;
     uint32_t nr_blocks_old;
+
+    unsigned int currentpage = pos / PAGE_SIZE;
+
 
     /* Complete the write() */
     int ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
@@ -203,6 +350,87 @@ end:
     return ret;
 }
 
+
+
+
+
+
+
+
+ssize_t
+simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
+{
+	size_t count = iov_iter_count(iter);
+	ssize_t retval = 0;
+
+	struct file *file = iocb->ki_filp;
+	struct address_space *mapping = file->f_mapping;
+	struct inode *inode = mapping->host;
+	/*      ~*~       */
+	inode_lock(inode);
+	/*      ~*~       */
+
+	//stolen from mm/filemap.c
+	loff_t *ppos = &iocb->ki_pos;
+	unsigned int index = *ppos >> PAGE_SHIFT;
+	unsigned int last_index = (*ppos + iter->count + PAGE_SIZE-1) >> PAGE_SHIFT; 
+	unsigned int offset = *ppos & ~PAGE_MASK;	
+	unsigned int count_test = iter->count;
+//	pr_info("**********index is %d last index is %d offset is %d count is %d", index, last_index, offset, count_test);
+
+
+	pr_info("*****beginning read inode %d page %d", inode->i_ino, index);
+
+	//invalidating the page
+	invalidatepage(inode->i_ino, index);
+
+	retval = generic_file_read_iter(iocb, iter);
+
+	/*      ~*~       */
+	inode_unlock(inode);
+	/*      ~*~       */
+	pr_info("****ending read");
+
+	return retval;
+
+}
+
+ssize_t simplefs_file_write_iter(struct kiocb *iocb, struct iov_iter *from) {
+
+
+	//NOTE this stuff is currently handled in
+	//simplefs.h and fs.c in the __init function
+	//struct spinlock *test_spin_lock;
+	//spin_lock_init(test_spin_lock);
+
+
+	struct file *file = iocb->ki_filp;
+	struct inode *inode = file->f_mapping->host;
+	ssize_t ret;
+
+	/*      ~*~       */
+	inode_lock(inode);
+	/*      ~*~       */
+
+
+	ret = generic_write_checks(iocb, from);
+	if (ret > 0)
+		ret = __generic_file_write_iter(iocb, from);
+
+
+	/*      ~*~       */
+	inode_unlock(inode);
+	/*      ~*~       */
+
+
+	if (ret > 0)
+		ret = generic_write_sync(iocb, ret);
+	return ret;
+
+
+}
+
+
 const struct address_space_operations simplefs_aops = {
     .readpage = simplefs_readpage,
     .writepage = simplefs_writepage,
@@ -213,7 +441,9 @@ const struct address_space_operations simplefs_aops = {
 const struct file_operations simplefs_file_ops = {
     .llseek = generic_file_llseek,
     .owner = THIS_MODULE,
-    .read_iter = generic_file_read_iter,
-    .write_iter = generic_file_write_iter,
+    .read_iter = simplefs_file_read_iter,
+    .write_iter = simplefs_file_write_iter,
     .fsync = generic_file_fsync,
 };
+
+
