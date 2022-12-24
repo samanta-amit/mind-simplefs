@@ -36,6 +36,38 @@ extern struct spinlock *test_spin_lock;
 //8 bits = 256 buckets
 DEFINE_HASHTABLE(inode_msi_table, 8); 
 
+static struct kiocb * kiocb_builder(struct file * filp, int ki_pos){
+	struct kiocb * newitem = kmalloc(sizeof(struct kiocb), GFP_KERNEL);
+	newitem->ki_filp = filp;
+	newitem->ki_pos = ki_pos;
+	//TODO I am leaving that ki_complete thing is null and I am not sure what to do with that
+	newitem->ki_flags = 0;
+	newitem->ki_hint = 0;
+	return newitem;
+
+}
+
+static struct iov_iter * iov_iter_builder(int type, int iov_offset, int count, int iovbufsize){
+	//allocate the iov_iter and the buffer that is behind it
+	struct iov_iter * newitem = kmalloc(sizeof(struct iov_iter), GFP_KERNEL);
+	newitem->type = type;
+	newitem->iov_offset = iov_offset;
+	newitem->count = count;
+	newitem->nr_segs = 0;
+
+	struct kvec * newkvec = kmalloc(sizeof(struct kvec), GFP_KERNEL);
+
+	//apparently this should not be a userland pointer
+	void * iov_base = kmalloc(iovbufsize, GFP_KERNEL);
+	newkvec->iov_base = iov_base;
+	newkvec->iov_len = iovbufsize;
+	void * temp = newkvec;	
+
+	newitem->iov = temp;
+	return newitem;
+}
+
+
 
 //adds page to inode hashmap
 static void hash_inode_page(int inodenum, int pagenum, struct address_space *mapping, int state) {
@@ -81,33 +113,90 @@ static struct inode_item * pageinhashmap(unsigned long i_ino, int pagenum) {
 
 }
 
+ssize_t simplefs_kernel_page_read(struct page * testpage, void * buf, size_t count, loff_t *pos)
+{
+	mm_segment_t old_fs;
+        ssize_t result;
+
+        old_fs = get_fs();
+        set_fs(get_ds());
+        /* The cast to a user pointer is valid due to the set_fs() */
+        //result = simplefs_vfs_read(file, (void __user *)buf, count, pos);
+
+
+	//TODO compute the offset, compute the index
+	//TODO I think this should work, but I should 
+	unsigned int index = *pos >> PAGE_SHIFT;
+	unsigned int offset = *pos & ~PAGE_MASK;	
+
+	//create the iov_iter
+	struct iov_iter iter;
+	struct iovec iov = {.iov_base = buf, .iov_len = count};
+	iov_iter_init(&iter, READ, &iov, 1, count);
+
+	//get the inode	(these are both stored in hashtable)
+	//struct address_space *mapping = file->f_mapping;
+	//struct inode *inode = mapping->host;
+
+	//with the inode 
+	//call find get page 
+	//struct page *testpage = find_get_page(mapping, index);
+
+	//copy_page_to_iter takes a page, offset, iov_iter and a size
+	copy_page_to_iter(testpage, 0, count, &iter);
+
+
+	set_fs(old_fs);
+        return result;
+
+
+}
+
+
 
 
 //Caller has to have inode lock
 //before calling this
-static bool invalidatepage(unsigned long i_ino, int pagenum){
+static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer){
 
 	struct inode_item* inodecheck = pageinhashmap(i_ino, pagenum);
 	if (inodecheck != NULL){
 		void *pagep;
+		int j;
 		struct address_space *mapping = inodecheck->mapping;
+
+
 		spin_lock_irq(&mapping->tree_lock);
 
 		//delete page from page cache
 		//trying to mess with stuff from the page tree
 		//this is stolen from find_get_entry in filemap.c
 		//spin locks stolen from fs/nilfs2/page.c 
-		pagep = radix_tree_lookup_slot(&mapping->page_tree, pagenum);
+		pagep = radix_tree_lookup(&mapping->page_tree, pagenum);
+
 		if(pagep){
+
+			//TODO READ THE PAGE BEFORE DELETING IT
+			loff_t test = 20; 
+			//void * testbuffer = kmalloc(sizeof(100), GFP_KERNEL);
+			struct page * testp = pagep;
+			pr_info("testing %d", testp->flags);
+			pr_info("testing2 %d", testbuffer);
+			simplefs_kernel_page_read(testp, testbuffer, 100, &test);
+
+			char * temp2 = testbuffer;
+			for(j = 0; j < 100; j++){
+				pr_info("invalidate read %c", temp2[j]);
+			}
+
 			radix_tree_delete(&mapping->page_tree, pagenum);
 			mapping->nrpages--; 
-		}
+		} 
 
 		//delete page from the hashmap
 		hash_del(&(inodecheck->myhash_list));
-		spin_unlock_irq(&mapping->tree_lock);
 		pr_info("invalidated pagd page");
-
+		spin_unlock_irq(&mapping->tree_lock);
 		return true;
 	}else{
 		pr_info("no page to invalidate");
@@ -116,6 +205,12 @@ static bool invalidatepage(unsigned long i_ino, int pagenum){
 
 }
 
+
+
+static bool callinvalidatepage(unsigned long i_ino, int pagenum){
+	void * testbuffer = kmalloc(sizeof(100), GFP_KERNEL);
+	return invalidatepage(i_ino, pagenum, testbuffer);
+}
 
 
 
@@ -215,9 +310,40 @@ static int simplefs_readpage(struct file *file, struct page *page)
     struct address_space *mapping = file->f_mapping; 
     struct inode *inode = mapping->host;
     int temp = page->index;
+    int result;
+    int i;
     performcoherence(inode, temp, mapping, 1);
+    result = mpage_readpage(page, simplefs_file_get_block);
 
-    return mpage_readpage(page, simplefs_file_get_block);
+	
+	
+    /* 
+    if(!result){
+	char * testing = kmap(page);
+	for(i = 0; i < 1000; i++){
+		pr_info("page VA contains %c", (testing)[i]);
+	}
+	kunmap(page);
+    }
+
+    int i;
+    //trying to read from the page before we write to it
+    //unfortunately, kmap stuff doesn't seem to work as expected 
+    
+    struct page *testpage = find_get_page(mapping, index);
+    if(testpage){
+	char * testing = kmap(testpage);
+	//testing = testpage->virtual;
+	for(i = 0; i < 8192; i++){
+		pr_info("page VA contains %c", (testing)[i]);
+	}
+	kunmap(testpage);
+    }
+	
+
+    */ 
+
+    return result;
 }
 
 /*
@@ -244,7 +370,7 @@ static int simplefs_write_begin(struct file *file,
 {
 
     unsigned int currentpage = pos / PAGE_SIZE;
-    pr_info("write begin page number %d, for inode %d", currentpage, (file->f_inode)->i_ino);
+    pr_info("write begin page number %d, for inode %d write length %d", currentpage, (file->f_inode)->i_ino, len);
     struct inode *inode = file->f_inode;
 
     //need to do the currentpage thing and not pass in the 
@@ -352,6 +478,92 @@ end:
 
 
 
+static ssize_t del_simplefs_sync_read(struct file *filp, char __user *buf, size_t len, loff_t *ppos)
+{
+        struct iovec iov = { .iov_base = buf, .iov_len = len };
+        struct kiocb kiocb;
+        struct iov_iter iter;
+        ssize_t ret;
+
+        init_sync_kiocb(&kiocb, filp);
+        kiocb.ki_pos = *ppos;
+        iov_iter_init(&iter, READ, &iov, 1, len);
+
+	ret = generic_file_read_iter(&kiocb, &iter);
+        BUG_ON(ret == -EIOCBQUEUED);
+        *ppos = kiocb.ki_pos;
+        return ret;
+}
+
+
+
+ssize_t del_simplefs_vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
+{
+        ssize_t ret;
+
+        if (!(file->f_mode & FMODE_READ))
+                return -EBADF;
+        if (!(file->f_mode & FMODE_CAN_READ))
+                return -EINVAL;
+        if (unlikely(!access_ok(VERIFY_WRITE, buf, count)))
+                return -EFAULT;
+
+	//TODO COMMENTED OUT STUFF THAT ISN'T PUBLIC
+        //ret = rw_verify_area(READ, file, pos, count);
+        //if (!ret) {
+        //        if (count > MAX_RW_COUNT)
+        //                count =  MAX_RW_COUNT;
+                ret = del_simplefs_sync_read(file, buf, count, pos);
+        //        if (ret > 0) {
+        //                fsnotify_access(file);
+        //                add_rchar(current, ret);
+        //        }
+        //        inc_syscr(current);
+        //}
+
+        return ret;
+}
+
+
+ssize_t simplefs_kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
+{
+	mm_segment_t old_fs;
+        ssize_t result;
+
+        old_fs = get_fs();
+        set_fs(get_ds());
+        /* The cast to a user pointer is valid due to the set_fs() */
+        //result = simplefs_vfs_read(file, (void __user *)buf, count, pos);
+
+
+	//TODO compute the offset, compute the index
+	//TODO I think this should work, but I should 
+	unsigned int index = *pos >> PAGE_SHIFT;
+	unsigned int offset = *pos & ~PAGE_MASK;	
+
+	//create the iov_iter
+	struct iov_iter iter;
+	struct iovec iov = {.iov_base = buf, .iov_len = count};
+	iov_iter_init(&iter, READ, &iov, 1, count);
+
+	//get the inode	(these are both stored in hashtable)
+	struct address_space *mapping = file->f_mapping;
+	struct inode *inode = mapping->host;
+
+	//with the inode 
+	//call find get page 
+	struct page *testpage = find_get_page(mapping, index);
+
+	//copy_page_to_iter takes a page, offset, iov_iter and a size
+	copy_page_to_iter(testpage, offset, count, &iter);
+
+
+	set_fs(old_fs);
+        return result;
+
+
+}
+
 
 
 
@@ -366,6 +578,21 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	struct file *file = iocb->ki_filp;
 	struct address_space *mapping = file->f_mapping;
 	struct inode *inode = mapping->host;
+
+
+
+	pr_info("read ki_pos %d", iocb->ki_pos);
+
+
+	//pr_info("read ki_pos %d", iocb->ki_pos);
+	//up here to avoid deadlock
+	//TODO rewrite the kernel_read function 
+	//so that it doesn't go back into the
+	//simplefs read iter function
+	
+
+
+
 	/*      ~*~       */
 	inode_lock(inode);
 	/*      ~*~       */
@@ -379,17 +606,37 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 //	pr_info("**********index is %d last index is %d offset is %d count is %d", index, last_index, offset, count_test);
 
 
-	pr_info("*****beginning read inode %d page %d", inode->i_ino, index);
+	//pr_info("*****beginning read inode %d page %d", inode->i_ino, index);
 
 	//invalidating the page
-	invalidatepage(inode->i_ino, index);
+	callinvalidatepage(inode->i_ino, index);
 
-	retval = generic_file_read_iter(iocb, iter);
 
+
+		retval = generic_file_read_iter(iocb, iter);
+
+   	pr_info("**** reading into vector type %d, length %d ki_flags %d ki_hint %d nr_segs %d ki_pos %d", iter->type, (iter->iov)->iov_len, iocb->ki_flags, iocb->ki_flags, iocb->ki_hint, iter->nr_segs, iocb->ki_pos);
+
+	//**** reading into vector type 0, length 8192 ki_flags 0 ki_hint 0 nr_segs 0 ki_pos 1
+
+
+
+	int i;
+	char * base = ((iter->iov)->iov_base);
+
+	for(i = 0; i < 100; i++){
+		pr_info("testing %c", base[i]);
+	}
+
+	
 	/*      ~*~       */
 	inode_unlock(inode);
 	/*      ~*~       */
 	pr_info("****ending read");
+
+
+
+
 
 	return retval;
 
@@ -403,10 +650,12 @@ ssize_t simplefs_file_write_iter(struct kiocb *iocb, struct iov_iter *from) {
 	//struct spinlock *test_spin_lock;
 	//spin_lock_init(test_spin_lock);
 
-
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
 	ssize_t ret;
+
+
+
 
 	/*      ~*~       */
 	inode_lock(inode);
@@ -418,9 +667,55 @@ ssize_t simplefs_file_write_iter(struct kiocb *iocb, struct iov_iter *from) {
 		ret = __generic_file_write_iter(iocb, from);
 
 
+
+	//trying to push a read operation in 
+	//struct kiocb * readkiocb = kiocb_builder(file, 1);
+	//struct iov_iter * readiter = iov_iter_builder(0, 0, 0, 8192);
+	//simplefs_file_read_iter(readkiocb, readiter);
+	//using simplefs one causes deadlock
+	//generic_file_read_iter(readkiocb, readiter);
+	//generic_file_read_iter(iocb, from);
+
+
+
+	int len = 100;
+
+	//TODO I NEED TO FREE THIS AND THE OTHER STUFF I ALLOC AS WELL
+	//TODO THIS PROBABLY ISN'T WORKING BECAUSE IT ISN'T A USERSPACE BUFFER??
+	//READ
+	//stolen from new_sync_read
+	//struct iovec iov = {.iov_base = testbuffer, .iov_len = len};
+	//struct kiocb kiocb;
+	//struct iov_iter iter;
+	//init_sync_kiocb(&kiocb, file);
+	//kiocb.ki_pos = 0;//does this work?
+	//iov_iter_init(&iter, READ, &iov, 1, len);
+	//generic_file_read_iter(&kiocb, &iter);
+	//int i;
+	//char * base = ((readiter->iov)->iov_base);
+	//char * base = ((&iter)->iov)->iov_base;
+
+
 	/*      ~*~       */
 	inode_unlock(inode);
 	/*      ~*~       */
+
+
+	//TODO for some reason this had to be after the write
+	//probably because we don't do null checks
+	//this isn't a great place for this though
+
+	/*
+	loff_t test = 20; 
+	void * testbuffer = kmalloc(sizeof(100), GFP_KERNEL);
+	int testing = simplefs_kernel_read(file, testbuffer, 100, &test);
+	int j;
+	char * temp2 = testbuffer;
+	for(j = 0; j < 100; j++){
+		pr_info("result %d forcing read %c", testing, temp2[j]);
+	}
+	*/
+
 
 
 	if (ret > 0)
