@@ -113,6 +113,48 @@ static struct inode_item * pageinhashmap(unsigned long i_ino, int pagenum) {
 
 }
 
+ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t count, loff_t *pos)
+{
+	mm_segment_t old_fs;
+        ssize_t result;
+
+        old_fs = get_fs();
+        set_fs(get_ds());
+        /* The cast to a user pointer is valid due to the set_fs() */
+        //result = simplefs_vfs_read(file, (void __user *)buf, count, pos);
+
+
+	//TODO compute the offset, compute the index
+	//TODO I think this should work, but I should 
+	unsigned int index = *pos >> PAGE_SHIFT;
+	unsigned int offset = *pos & ~PAGE_MASK;	
+
+	//create the iov_iter
+	struct iov_iter iter;
+	struct iovec iov = {.iov_base = buf, .iov_len = count};
+	iov_iter_init(&iter, READ, &iov, 1, count);
+
+	//get the inode	(these are both stored in hashtable)
+	//struct address_space *mapping = file->f_mapping;
+	//struct inode *inode = mapping->host;
+
+	//with the inode 
+	//call find get page 
+	//struct page *testpage = find_get_page(mapping, index);
+
+	//copy_page_to_iter takes a page, offset, iov_iter and a size
+	//copy_page_to_iter(testpage, 0, count, &iter);
+	copy_page_from_iter(testpage, 0, count, &iter);
+
+
+	set_fs(old_fs);
+        return result;
+
+
+}
+
+
+
 ssize_t simplefs_kernel_page_read(struct page * testpage, void * buf, size_t count, loff_t *pos)
 {
 	mm_segment_t old_fs;
@@ -312,38 +354,59 @@ static int simplefs_readpage(struct file *file, struct page *page)
     int temp = page->index;
     int result;
     int i;
+    int error = 0;
     performcoherence(inode, temp, mapping, 1);
     result = mpage_readpage(page, simplefs_file_get_block);
+    loff_t test = 20;
+        error = lock_page_killable(page);	
+	pr_info("page up to date %d", PageUptodate(page));
+	pr_info("page up to date %d", PageUptodate(page));
+	pr_info("page up to date %d", PageUptodate(page));
+	pr_info("page up to date %d", PageUptodate(page));
+	pr_info("page up to date %d", PageUptodate(page));
+	pr_info("page up to date %d", PageUptodate(page));
+	pr_info("page up to date %d", PageUptodate(page));
+	pr_info("page up to date %d", PageUptodate(page));
+	pr_info("page up to date %d", PageUptodate(page));
 
-	
-	
-    /* 
-    if(!result){
-	char * testing = kmap(page);
-	for(i = 0; i < 1000; i++){
-		pr_info("page VA contains %c", (testing)[i]);
+	//if the page is not up to date don't try and read from it
+	if(!error){
+		char * testbuffer = kmalloc(sizeof(100), GFP_KERNEL);
+		testbuffer[0] = 'r';
+		testbuffer[1] = 'e';
+		testbuffer[2] = 'a';
+		testbuffer[3] = 'd';
+		testbuffer[4] = ' ';
+		testbuffer[5] = 'f';
+		testbuffer[6] = 'r';
+		testbuffer[7] = 'o';
+		testbuffer[8] = 'm';
+		testbuffer[9] = ' ';
+		testbuffer[10] = 's';
+		testbuffer[11] = 'w';
+		testbuffer[12] = 'i';
+		testbuffer[13] = 't';
+		testbuffer[14] = 'c';
+		testbuffer[15] = 'h';
+
+		simplefs_kernel_page_write(page, testbuffer, 100, &test);
+	 
+		//char * readbuffer = testbuffer;
+		//for(i = 0; i < 100; i++){
+			//pr_info("********* reading from readpage %c", readbuffer[i]);
+		//}
 	}
-	kunmap(page);
-    }
 
-    int i;
-    //trying to read from the page before we write to it
-    //unfortunately, kmap stuff doesn't seem to work as expected 
-    
-    struct page *testpage = find_get_page(mapping, index);
-    if(testpage){
-	char * testing = kmap(testpage);
-	//testing = testpage->virtual;
-	for(i = 0; i < 8192; i++){
-		pr_info("page VA contains %c", (testing)[i]);
-	}
-	kunmap(testpage);
-    }
-	
+	unlock_page(page);
 
-    */ 
 
-    return result;
+
+
+
+
+
+
+        return result;
 }
 
 /*
