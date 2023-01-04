@@ -36,6 +36,9 @@ extern struct spinlock *test_spin_lock;
 //8 bits = 256 buckets
 DEFINE_HASHTABLE(inode_msi_table, 8); 
 
+
+//kernel io control block builder
+//not used in the current modified kernel read write functions
 static struct kiocb * kiocb_builder(struct file * filp, int ki_pos){
 	struct kiocb * newitem = kmalloc(sizeof(struct kiocb), GFP_KERNEL);
 	newitem->ki_filp = filp;
@@ -47,6 +50,9 @@ static struct kiocb * kiocb_builder(struct file * filp, int ki_pos){
 
 }
 
+
+
+//iov_iter_builder this is also not used by the modified kernel read write functions
 static struct iov_iter * iov_iter_builder(int type, int iov_offset, int count, int iovbufsize){
 	//allocate the iov_iter and the buffer that is behind it
 	struct iov_iter * newitem = kmalloc(sizeof(struct iov_iter), GFP_KERNEL);
@@ -69,7 +75,12 @@ static struct iov_iter * iov_iter_builder(int type, int iov_offset, int count, i
 
 
 
-//adds page to inode hashmap
+//adds page to inode hashmap, assuming inode hashmap is 
+//already defined as above. Given an inode number, page number, mapping and state
+//this will add to the hash table hashed on the inode number
+//this means that at the moment it is basically indexed on inodes
+//and then a linked list of pages from that inode
+//there is currently not a 2D hashtable 
 static void hash_inode_page(int inodenum, int pagenum, struct address_space *mapping, int state) {
 	pr_info("adding inode %d page %d to hash", inodenum, pagenum);
 	//malloc an inode item and add it to the hashmap	
@@ -89,6 +100,9 @@ static void hash_inode_page(int inodenum, int pagenum, struct address_space *map
 
 //https://kernelnewbies.org/FAQ/Hashtables
 //returns inode_item if the page is in the hashmap
+//checks the index for the inode number, and then iterates
+//through the list of all the inode/page combos that end up 
+//in the same bucket.
 static struct inode_item * pageinhashmap(unsigned long i_ino, int pagenum) {
 	struct inode_item *tempinode;
 	int i = i_ino;
@@ -113,6 +127,10 @@ static struct inode_item * pageinhashmap(unsigned long i_ino, int pagenum) {
 
 }
 
+
+//this performs a write on the given page, using the given buffer
+//this bypasses the normal write operations and does the minimal
+//amount of setup needed in order to call copy_page_from_iter
 ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t count, loff_t *pos)
 {
 	mm_segment_t old_fs;
@@ -134,16 +152,6 @@ ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t co
 	struct iovec iov = {.iov_base = buf, .iov_len = count};
 	iov_iter_init(&iter, READ, &iov, 1, count);
 
-	//get the inode	(these are both stored in hashtable)
-	//struct address_space *mapping = file->f_mapping;
-	//struct inode *inode = mapping->host;
-
-	//with the inode 
-	//call find get page 
-	//struct page *testpage = find_get_page(mapping, index);
-
-	//copy_page_to_iter takes a page, offset, iov_iter and a size
-	//copy_page_to_iter(testpage, 0, count, &iter);
 	copy_page_from_iter(testpage, 0, count, &iter);
 
 
@@ -154,7 +162,9 @@ ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t co
 }
 
 
-
+//this performs a read on the given page, read into the given buffer
+//this bypasses the normal read operations and does the minimal
+//amount of setup needed in order to call copy_page_to_iter
 ssize_t simplefs_kernel_page_read(struct page * testpage, void * buf, size_t count, loff_t *pos)
 {
 	mm_segment_t old_fs;
@@ -176,17 +186,7 @@ ssize_t simplefs_kernel_page_read(struct page * testpage, void * buf, size_t cou
 	struct iovec iov = {.iov_base = buf, .iov_len = count};
 	iov_iter_init(&iter, READ, &iov, 1, count);
 
-	//get the inode	(these are both stored in hashtable)
-	//struct address_space *mapping = file->f_mapping;
-	//struct inode *inode = mapping->host;
-
-	//with the inode 
-	//call find get page 
-	//struct page *testpage = find_get_page(mapping, index);
-
-	//copy_page_to_iter takes a page, offset, iov_iter and a size
 	copy_page_to_iter(testpage, 0, count, &iter);
-
 
 	set_fs(old_fs);
         return result;
@@ -198,7 +198,8 @@ ssize_t simplefs_kernel_page_read(struct page * testpage, void * buf, size_t cou
 
 
 //Caller has to have inode lock
-//before calling this
+//before calling this this deletes the page from the page cache
+//radix tree, and then also removes the entry in the hashtable
 static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer){
 
 	struct inode_item* inodecheck = pageinhashmap(i_ino, pagenum);
@@ -248,7 +249,11 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer){
 }
 
 
-
+//a basic wrapper to invalidate a page, should return a 
+//pointer to a struct that shows the end result when done 
+//or something. Something similar to this will be called
+//as a RPC by the switch to invalidate a page and copy
+//the information from it.
 static bool callinvalidatepage(unsigned long i_ino, int pagenum){
 	void * testbuffer = kmalloc(sizeof(100), GFP_KERNEL);
 	return invalidatepage(i_ino, pagenum, testbuffer);
@@ -324,6 +329,11 @@ brelse_index:
     return ret;
 }
 
+
+
+//this is just a simple function that checks the state of the page in the 
+//hash table this would be called on page reads and communicate with 
+//the switch if the state wasn't correct for a page
 static void performcoherence(struct inode * inode, int page, struct address_space * mapping, int reqstate) {
     struct inode_item * temp = pageinhashmap(inode->i_ino, page);
     if(temp == NULL){
@@ -344,7 +354,7 @@ static void performcoherence(struct inode * inode, int page, struct address_spac
 } 
 /*
  * Called by the page cache to read a page from the physical disk and map it in
- * memory.
+ * memory. TODO THIS IS PROBABLY WHERE SOME COHERENCE STUFF WILL OCCUR.
  */
 static int simplefs_readpage(struct file *file, struct page *page)
 {
@@ -422,6 +432,8 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
  * Called by the VFS when a write() syscall occurs on file before writing the
  * data in the page cache. This functions checks if the write will be able to
  * complete and allocates the necessary blocks through block_write_begin().
+ *
+ * TODO coherence on pages should be done in here for the affected pages.
  */
 static int simplefs_write_begin(struct file *file,
                                 struct address_space *mapping,
@@ -559,7 +571,7 @@ static ssize_t del_simplefs_sync_read(struct file *filp, char __user *buf, size_
 }
 
 
-
+//del prefix just stating that this isn't needed anymore
 ssize_t del_simplefs_vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
 {
         ssize_t ret;
@@ -588,6 +600,8 @@ ssize_t del_simplefs_vfs_read(struct file *file, char __user *buf, size_t count,
 }
 
 
+
+//unused modified version of kernel read
 ssize_t simplefs_kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
 {
 	mm_segment_t old_fs;
