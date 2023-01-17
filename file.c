@@ -196,7 +196,8 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer){
 				pr_info("invalidate read %c", temp2[j]);
 			}
 
-			radix_tree_delete(&mapping->page_tree, pagenum);
+			//radix_tree_delete(&mapping->page_tree, pagenum);
+			ClearPageUptodate(testp);
 			mapping->nrpages--; 
 		} 
 
