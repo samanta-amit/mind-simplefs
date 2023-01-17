@@ -120,6 +120,7 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino);
 extern const struct file_operations simplefs_file_ops;
 extern const struct file_operations simplefs_dir_ops;
 extern const struct address_space_operations simplefs_aops;
+extern const struct dentry_operations simplefs_dentry_ops;
 
 /* extent functions */
 extern uint32_t simplefs_ext_search(struct simplefs_file_ei_block *index,
