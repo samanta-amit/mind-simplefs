@@ -37,41 +37,6 @@ extern struct spinlock *test_spin_lock;
 DEFINE_HASHTABLE(inode_msi_table, 8); 
 
 
-//kernel io control block builder
-//not used in the current modified kernel read write functions
-static struct kiocb * kiocb_builder(struct file * filp, int ki_pos){
-	struct kiocb * newitem = kmalloc(sizeof(struct kiocb), GFP_KERNEL);
-	newitem->ki_filp = filp;
-	newitem->ki_pos = ki_pos;
-	//TODO I am leaving that ki_complete thing is null and I am not sure what to do with that
-	newitem->ki_flags = 0;
-	newitem->ki_hint = 0;
-	return newitem;
-
-}
-
-
-
-//iov_iter_builder this is also not used by the modified kernel read write functions
-static struct iov_iter * iov_iter_builder(int type, int iov_offset, int count, int iovbufsize){
-	//allocate the iov_iter and the buffer that is behind it
-	struct iov_iter * newitem = kmalloc(sizeof(struct iov_iter), GFP_KERNEL);
-	newitem->type = type;
-	newitem->iov_offset = iov_offset;
-	newitem->count = count;
-	newitem->nr_segs = 0;
-
-	struct kvec * newkvec = kmalloc(sizeof(struct kvec), GFP_KERNEL);
-
-	//apparently this should not be a userland pointer
-	void * iov_base = kmalloc(iovbufsize, GFP_KERNEL);
-	newkvec->iov_base = iov_base;
-	newkvec->iov_len = iovbufsize;
-	void * temp = newkvec;	
-
-	newitem->iov = temp;
-	return newitem;
-}
 
 
 
@@ -221,7 +186,6 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer){
 
 			//TODO READ THE PAGE BEFORE DELETING IT
 			loff_t test = 20; 
-			//void * testbuffer = kmalloc(sizeof(100), GFP_KERNEL);
 			struct page * testp = pagep;
 			pr_info("testing %d", testp->flags);
 			pr_info("testing2 %d", testbuffer);
@@ -255,8 +219,8 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer){
 //as a RPC by the switch to invalidate a page and copy
 //the information from it.
 static bool callinvalidatepage(unsigned long i_ino, int pagenum){
-	void * testbuffer = kmalloc(sizeof(100), GFP_KERNEL);
-	return invalidatepage(i_ino, pagenum, testbuffer);
+	char testbuffer[100];// = kmalloc(sizeof(100), GFP_KERNEL);
+	return invalidatepage(i_ino, pagenum, &testbuffer);
 }
 
 
@@ -352,23 +316,99 @@ static void performcoherence(struct inode * inode, int page, struct address_spac
 
     }
 } 
+
+
+
+
+
+
+/*
+ *
+ * STOLEN FROM MPAGE.C
+ * support function for mpage_readpages.  The fs supplied get_block might
+ * return an up to date buffer.  This is used to map that buffer into
+ * the page, which allows readpage to avoid triggering a duplicate call
+ * to get_block.
+ *
+ * The idea is to avoid adding buffers to pages that don't already have
+ * them.  So when the buffer is up to date and the page size == block size,
+ * this marks the page up to date instead of adding new buffers.
+ */
+static void 
+map_buffer_to_page(struct page *page, struct buffer_head *bh, int page_block) 
+{
+	struct inode *inode = page->mapping->host;
+	struct buffer_head *page_bh, *head;
+	int block = 0;
+
+	if (!page_has_buffers(page)) {
+		/*
+		 * don't make any buffers if there is only one buffer on
+		 * the page and the page just needs to be set up to date
+		 */
+		if (inode->i_blkbits == PAGE_SHIFT &&
+		    buffer_uptodate(bh)) {
+			SetPageUptodate(page);    
+			return;
+		}
+		create_empty_buffers(page, i_blocksize(inode), 0);
+	}
+	head = page_buffers(page);
+	page_bh = head;
+	do {
+		if (block == page_block) {
+			page_bh->b_state = bh->b_state;
+			page_bh->b_bdev = bh->b_bdev;
+			page_bh->b_blocknr = bh->b_blocknr;
+			break;
+		}
+		page_bh = page_bh->b_this_page;
+		block++;
+	} while (page_bh != head);
+}
+
+
+
+
 /*
  * Called by the page cache to read a page from the physical disk and map it in
  * memory. TODO THIS IS PROBABLY WHERE SOME COHERENCE STUFF WILL OCCUR.
  */
 static int simplefs_readpage(struct file *file, struct page *page)
 {
+    //TODO coherence stuff should also occur here
     pr_info("******reading page number %d", page->index);
     struct address_space *mapping = file->f_mapping; 
     struct inode *inode = mapping->host;
     int temp = page->index;
-    int result;
+    int result = 0;
     int i;
     int error = 0;
-    performcoherence(inode, temp, mapping, 1);
-    result = mpage_readpage(page, simplefs_file_get_block);
+    //result = mpage_readpage(page, simplefs_file_get_block);
+   
+
+    struct buffer_head test_bh;
+    test_bh.b_state = 0;
+    test_bh.b_size = 1;
+    test_bh.b_page = page;
+  
+    set_buffer_mapped(&test_bh);
+    set_buffer_uptodate(&test_bh);
+
+    //TODO do stuff here with writing into the buffer???
+    //second thing is the block size, last is the b_state
+    //stolen from map_buffer_to_page when the page has no buffers
+    //create_empty_buffers(page, i_blocksize(inode), 0);
+
+    map_buffer_to_page(page, &test_bh, 0); //last thing is the page block index(?)
+
+
+
     loff_t test = 20;
-        error = lock_page_killable(page);	
+
+	//marking the page as up to date
+	SetPageUptodate(page);
+        //error = lock_page_killable(page);	
 	pr_info("page up to date %d", PageUptodate(page));
 	pr_info("page up to date %d", PageUptodate(page));
 	pr_info("page up to date %d", PageUptodate(page));
@@ -379,9 +419,12 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	pr_info("page up to date %d", PageUptodate(page));
 	pr_info("page up to date %d", PageUptodate(page));
 
+
 	//if the page is not up to date don't try and read from it
 	if(!error){
-		char * testbuffer = kmalloc(sizeof(100), GFP_KERNEL);
+		pr_info("attempting to write to page buffer");
+
+		char * testbuffer[100]; 
 		testbuffer[0] = 'r';
 		testbuffer[1] = 'e';
 		testbuffer[2] = 'a';
@@ -398,13 +441,15 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		testbuffer[13] = 't';
 		testbuffer[14] = 'c';
 		testbuffer[15] = 'h';
+		for(i = 16; i < 100; i++){
+			testbuffer[i] = '_';
 
+		}
 		simplefs_kernel_page_write(page, testbuffer, 100, &test);
-	 
+	 	//PAGE_SIZE;
+
 		//char * readbuffer = testbuffer;
-		//for(i = 0; i < 100; i++){
-			//pr_info("********* reading from readpage %c", readbuffer[i]);
-		//}
+		
 	}
 
 	unlock_page(page);
@@ -782,17 +827,6 @@ ssize_t simplefs_file_write_iter(struct kiocb *iocb, struct iov_iter *from) {
 	//probably because we don't do null checks
 	//this isn't a great place for this though
 
-	/*
-	loff_t test = 20; 
-	void * testbuffer = kmalloc(sizeof(100), GFP_KERNEL);
-	int testing = simplefs_kernel_read(file, testbuffer, 100, &test);
-	int j;
-	char * temp2 = testbuffer;
-	for(j = 0; j < 100; j++){
-		pr_info("result %d forcing read %c", testing, temp2[j]);
-	}
-	*/
-
 
 
 	if (ret > 0)
@@ -801,6 +835,7 @@ ssize_t simplefs_file_write_iter(struct kiocb *iocb, struct iov_iter *from) {
 
 
 }
+
 
 
 const struct address_space_operations simplefs_aops = {

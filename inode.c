@@ -23,6 +23,13 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
     uint32_t inode_shift = ino % SIMPLEFS_INODES_PER_BLOCK;
     int ret;
 
+    pr_info("getting inode");
+    pr_info("getting inode");
+    pr_info("getting inode");
+    pr_info("getting inode");
+    pr_info("getting inode");
+    pr_info("getting inode");
+
     /* Fail if ino is out of range */
     if (ino >= sbi->nr_inodes)
         return ERR_PTR(-EINVAL);
@@ -106,6 +113,13 @@ static struct dentry *simplefs_lookup(struct inode *dir,
     struct simplefs_dir_block *dblock = NULL;
     struct simplefs_file *f = NULL;
     int ei, bi, fi;
+    pr_info("looking up dentry");
+    pr_info("looking up dentry");
+    pr_info("looking up dentry");
+    pr_info("looking up dentry");
+    pr_info("looking up dentry");
+    pr_info("looking up dentry");
+    pr_info("dentry name %s", dentry->d_name.name);
 
     /* Check filename length */
     if (dentry->d_name.len > SIMPLEFS_FILENAME_LEN)
@@ -929,3 +943,31 @@ static const struct inode_operations simplefs_inode_ops = {
 static const struct inode_operations symlink_inode_ops = {
     .get_link = simplefs_get_link,
 };
+
+
+//I think this should force every dentry to be requested 
+//from the file system (partially stolen from nfs cause the 
+//static part
+static int simplefs_dentry_revalidate(struct dentry * test, unsigned int test2) {
+	pr_info("****dentry revalidate");
+	pr_info("***dentry revalidate");
+	pr_info("**dentry revalidate");
+	pr_info("*dentry revalidate");
+    	pr_info("dentry revalidate name %s", test->d_name.name);
+	pr_info("*dentry revalidate");
+	pr_info("**dentry revalidate");
+	pr_info("***dentry revalidate");
+	pr_info("****dentry revalidate");
+
+	return 0;
+}
+
+
+
+const struct dentry_operations simplefs_dentry_ops = {
+	.d_revalidate = simplefs_dentry_revalidate,
+};
+
+
+
+
