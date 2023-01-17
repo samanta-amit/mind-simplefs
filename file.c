@@ -425,7 +425,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	if(!error){
 		pr_info("attempting to write to page buffer");
 
-		char * testbuffer[100]; 
+		char testbuffer[100]; 
 		testbuffer[0] = 'r';
 		testbuffer[1] = 'e';
 		testbuffer[2] = 'a';
