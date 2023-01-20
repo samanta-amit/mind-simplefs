@@ -207,7 +207,7 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer){
 		spin_unlock_irq(&mapping->tree_lock);
 		return true;
 	}else{
-		pr_info("no page to invalidate");
+		pr_info("no page to invalidate %d %d", i_ino, pagenum);
 		return false;
 	}
 
@@ -423,31 +423,53 @@ static int simplefs_readpage(struct file *file, struct page *page)
 
 	//if the page is not up to date don't try and read from it
 	if(!error){
-		pr_info("attempting to write to page buffer");
 
-		char testbuffer[100]; 
-		testbuffer[0] = 'r';
-		testbuffer[1] = 'e';
-		testbuffer[2] = 'a';
-		testbuffer[3] = 'd';
-		testbuffer[4] = ' ';
-		testbuffer[5] = 'f';
-		testbuffer[6] = 'r';
-		testbuffer[7] = 'o';
-		testbuffer[8] = 'm';
-		testbuffer[9] = ' ';
-		testbuffer[10] = 's';
-		testbuffer[11] = 'w';
-		testbuffer[12] = 'i';
-		testbuffer[13] = 't';
-		testbuffer[14] = 'c';
-		testbuffer[15] = 'h';
-		for(i = 16; i < 100; i++){
-			testbuffer[i] = '_';
+		return_and_retry:
+		struct fault_reply_struct ret_buf;
+		struct cache_waiting_node *wait_node = NULL;
+		struct cnthread_page *new_cnpage = NULL;
+
+		//TODO can I leave this null or do I need to do prepare_data_page?
+
+		if(unlikely(cpu_id >= DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE ||
+					!spin_trylock(&per_cpu_pgfault_lock[cpu_id])))
+		{
+			pr_warn_ratelimited("this CPU already has on-going page fault: cpu [%d] tgid[%u] pid[%u]\n",
+					cpu_id(unsigned int)tsk-tgid, (unsigned int)tsk->pid);
+					put_cpu();
+					goto return_and_retry;
 
 		}
-		simplefs_kernel_page_write(page, testbuffer, 100, &test);
+
+
+
+		ret_buf.data_size = PAGE_SIZE;
+		ret_buf.data = (void*)get_dummy_page_dma_addr(get_cpu());
+		is_kern_shared_mem = 1; //or should this be zero?
+		int address = (inode->i_ino << 16) + (page->index & (131071)); //2**17 - 1 
+		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk->tgid, address & PAGE_MASK, new_cnpage);
+
+		int fault = send_pfault_to_mn(NULL, X86_PF_USER, address, 0, &ret_buf);
+
+
+		wait_node->ack_buf = ret_buf.ack_buf;
+		if(fault <= 0)
+		{
+			cancel_waiting_for_nack(wait_node);
+		}
+
+		wait_err = wait_ack_from_ctrl(wait_node, NULL, NULL, new_cnpage);
+
+		if(wait_err){
+			goto return_and_retry;
+		}
+
+		int test = 0;//this is the offset into the page that we start making the change
+		//but since we are copying the entire page we should just start at zero
+
+		simplefs_kernel_page_write(page, ret_buf.data, ret_buf.data_size, &test);
 	 	//PAGE_SIZE;
+		spin_unlock(&per_cpu_pgfault_lock[cpu_id]);
 
 		//char * readbuffer = testbuffer;
 		
@@ -491,7 +513,13 @@ static int simplefs_write_begin(struct file *file,
 {
 
     unsigned int currentpage = pos / PAGE_SIZE;
-    pr_info("write begin page number %d, for inode %d write length %d", currentpage, (file->f_inode)->i_ino, len);
+    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
+
     struct inode *inode = file->f_inode;
 
     //need to do the currentpage thing and not pass in the 
@@ -729,7 +757,7 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 //	pr_info("**********index is %d last index is %d offset is %d count is %d", index, last_index, offset, count_test);
 
 
-	//pr_info("*****beginning read inode %d page %d", inode->i_ino, index);
+	pr_info("*****beginning read inode %d page %d", inode->i_ino, index);
 
 	//invalidating the page
 	callinvalidatepage(inode->i_ino, index);
@@ -748,7 +776,7 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	char * base = ((iter->iov)->iov_base);
 
 	for(i = 0; i < 100; i++){
-		pr_info("testing %c", base[i]);
+		//pr_info("testing %c", base[i]);
 	}
 
 	
