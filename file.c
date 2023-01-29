@@ -10,6 +10,10 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include "bitmap.h"
+#include <../../include/disagg/cnthread_disagg.h>
+#include <../../include/disagg/fault_disagg.h>
+#include <../../roce_modules/roce_for_disagg/roce_disagg.h>
+#include <asm/traps.h>
 
 #include "simplefs.h"
 
@@ -207,7 +211,7 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer){
 		spin_unlock_irq(&mapping->tree_lock);
 		return true;
 	}else{
-		pr_info("no page to invalidate");
+		pr_info("no page to invalidate %d %d", i_ino, pagenum);
 		return false;
 	}
 
@@ -405,7 +409,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 
 
 
-    loff_t test = 20;
+    //loff_t test = 20;
 
 	//marking the page as up to date
 	SetPageUptodate(page);
@@ -422,36 +426,54 @@ static int simplefs_readpage(struct file *file, struct page *page)
 
 
 	//if the page is not up to date don't try and read from it
-	if(!error){
-		pr_info("attempting to write to page buffer");
+	//if(!error){
+                
+		struct fault_reply_struct reply;
+                struct fault_reply_struct ret_buf;
+                struct cache_waiting_node *wait_node = NULL;
+                struct task_struct *tsk;
+                struct cnthread_page *new_cnpage = NULL;
+                int wait_err = -1;
+		int cpu_id = get_cpu();
+		pr_info("page up to date %d", cpu_id);
+		static spinlock_t pgfault_lock; 
 
-		char testbuffer[100]; 
-		testbuffer[0] = 'r';
-		testbuffer[1] = 'e';
-		testbuffer[2] = 'a';
-		testbuffer[3] = 'd';
-		testbuffer[4] = ' ';
-		testbuffer[5] = 'f';
-		testbuffer[6] = 'r';
-		testbuffer[7] = 'o';
-		testbuffer[8] = 'm';
-		testbuffer[9] = ' ';
-		testbuffer[10] = 's';
-		testbuffer[11] = 'w';
-		testbuffer[12] = 'i';
-		testbuffer[13] = 't';
-		testbuffer[14] = 'c';
-		testbuffer[15] = 'h';
-		for(i = 16; i < 100; i++){
-			testbuffer[i] = '_';
+		
+		spin_lock(&pgfault_lock);
 
+		ret_buf.data_size = PAGE_SIZE;
+		ret_buf.data = (void*)get_dummy_page_dma_addr(get_cpu());
+		int is_kern_shared_mem = 1; //or should this be zero?
+		int address = 0x0000000010ac0b18;
+		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk->tgid, address & PAGE_MASK, new_cnpage);
+		pr_info("address %d", address);
+
+		int fault = send_pfault_to_mn(0, X86_PF_USER, address, 0, &ret_buf);
+
+		pr_pgfault("CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, address);
+		wait_node->ack_buf = ret_buf.ack_buf;
+  		pr_info("fault %d", fault);
+		if(fault <= 0)
+		{
+			cancel_waiting_for_nack(wait_node);
 		}
-		simplefs_kernel_page_write(page, testbuffer, 100, &test);
+
+		//wait_err = wait_ack_from_ctrl(wait_node, NULL, NULL, new_cnpage);
+
+		//if(wait_err){
+			//return; 
+		//}
+
+		loff_t test = 0;//this is the offset into the page that we start making the change
+		//but since we are copying the entire page we should just start at zero
+
+		simplefs_kernel_page_write(page, ret_buf.data, ret_buf.data_size, &test);
 	 	//PAGE_SIZE;
+		spin_unlock(&pgfault_lock);
 
 		//char * readbuffer = testbuffer;
 		
-	}
+	//}
 
 	unlock_page(page);
 
@@ -490,9 +512,16 @@ static int simplefs_write_begin(struct file *file,
                                 void **fsdata)
 {
 
-    unsigned int currentpage = pos / PAGE_SIZE;
-    pr_info("write begin page number %d, for inode %d write length %d", currentpage, (file->f_inode)->i_ino, len);
+	    unsigned int currentpage = pos / PAGE_SIZE;
+    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
+
     struct inode *inode = file->f_inode;
+
 
     //need to do the currentpage thing and not pass in the 
     //actual page since it causes null dereference stuff
@@ -729,7 +758,7 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 //	pr_info("**********index is %d last index is %d offset is %d count is %d", index, last_index, offset, count_test);
 
 
-	//pr_info("*****beginning read inode %d page %d", inode->i_ino, index);
+	pr_info("*****beginning read inode %d page %d", inode->i_ino, index);
 
 	//invalidating the page
 	callinvalidatepage(inode->i_ino, index);
@@ -748,7 +777,7 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	char * base = ((iter->iov)->iov_base);
 
 	for(i = 0; i < 100; i++){
-		pr_info("testing %c", base[i]);
+		//pr_info("testing %c", base[i]);
 	}
 
 	
@@ -776,14 +805,6 @@ ssize_t simplefs_file_write_iter(struct kiocb *iocb, struct iov_iter *from) {
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
 	ssize_t ret;
-
-
-
-
-	/*      ~*~       */
-	inode_lock(inode);
-	/*      ~*~       */
-
 
 	ret = generic_write_checks(iocb, from);
 	if (ret > 0)
@@ -819,10 +840,6 @@ ssize_t simplefs_file_write_iter(struct kiocb *iocb, struct iov_iter *from) {
 	//char * base = ((&iter)->iov)->iov_base;
 
 
-	/*      ~*~       */
-	inode_unlock(inode);
-	/*      ~*~       */
-
 
 	//TODO for some reason this had to be after the write
 	//probably because we don't do null checks
@@ -853,5 +870,3 @@ const struct file_operations simplefs_file_ops = {
     .write_iter = simplefs_file_write_iter,
     .fsync = generic_file_fsync,
 };
-
-
