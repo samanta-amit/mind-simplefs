@@ -14,6 +14,7 @@
 #include <../../include/disagg/fault_disagg.h>
 #include <../../roce_modules/roce_for_disagg/roce_disagg.h>
 #include <asm/traps.h>
+#include <../include/disagg/kshmem_disagg.h>
 
 #include "simplefs.h"
 
@@ -436,19 +437,22 @@ static int simplefs_readpage(struct file *file, struct page *page)
                 int wait_err = -1;
 		int cpu_id = get_cpu();
 		pr_info("page up to date %d", cpu_id);
-		static spinlock_t pgfault_lock; 
-
+		static spinlock_t pgfault_lock;
+		wait_node = NULL;
+		unsigned long address;
+		unsigned long error_code;
+		struct fault_msg_struct payload;
+		payload.address = address;
+	        payload.error_code = error_code;
 		
 		spin_lock(&pgfault_lock);
 
 		ret_buf.data_size = PAGE_SIZE;
 		ret_buf.data = (void*)get_dummy_page_dma_addr(get_cpu());
-		int is_kern_shared_mem = 1; //or should this be zero?
-		int address = 0x0000000010ac0b18;
+		address = alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
 		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk->tgid, address & PAGE_MASK, new_cnpage);
 		pr_info("address %d", address);
-
-		int fault = send_pfault_to_mn(0, X86_PF_USER, address, 0, &ret_buf);
+		int fault = send_pfault_to_mn(tsk, error_code, address, 0, &ret_buf);
 
 		pr_pgfault("CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, address);
 		wait_node->ack_buf = ret_buf.ack_buf;
@@ -461,6 +465,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		//wait_err = wait_ack_from_ctrl(wait_node, NULL, NULL, new_cnpage);
 
 		//if(wait_err){
+			//goto return_and_retry;
 			//return; 
 		//}
 
