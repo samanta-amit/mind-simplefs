@@ -451,9 +451,6 @@ static int simplefs_readpage(struct file *file, struct page *page)
                 ret_buf.data = (void*)get_dummy_page_dma_addr(get_cpu());
                 u64 alloc_size = sizeof(struct task_struct);
                 address = alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
-                        //0x0000000010ac0b18;
-                        //0000000000000001;
-                        //(inode->i_ino << 16) + (page->index & (131071)); //2**17 - 1 
                 int is_kern_shared_mem = 1;
                 wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk->tgid, address & PAGE_MASK, new_cnpage);
                 pr_info("address %d", address);
