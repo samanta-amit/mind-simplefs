@@ -446,17 +446,23 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	        payload.error_code = error_code;
 		
 		spin_lock(&pgfault_lock);
+	
+	        ret_buf.data_size = PAGE_SIZE;
+                ret_buf.data = (void*)get_dummy_page_dma_addr(get_cpu());
+                u64 alloc_size = sizeof(struct task_struct);
+                address = alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
+                        //0x0000000010ac0b18;
+                        //0000000000000001;
+                        //(inode->i_ino << 16) + (page->index & (131071)); //2**17 - 1 
+                int is_kern_shared_mem = 1;
+                wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk->tgid, address & PAGE_MASK, new_cnpage);
+                pr_info("address %d", address);
+                int fault = send_pfault_to_mn(tsk, error_code, address, 0, &ret_buf);
 
-		ret_buf.data_size = PAGE_SIZE;
-		ret_buf.data = (void*)get_dummy_page_dma_addr(get_cpu());
-		address = alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
-		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk->tgid, address & PAGE_MASK, new_cnpage);
-		pr_info("address %d", address);
-		int fault = send_pfault_to_mn(tsk, error_code, address, 0, &ret_buf);
+                pr_pgfault("CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, address);
+                wait_node->ack_buf = ret_buf.ack_buf;
+                pr_info("fault %d", fault);
 
-		pr_pgfault("CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, address);
-		wait_node->ack_buf = ret_buf.ack_buf;
-  		pr_info("fault %d", fault);
 		if(fault <= 0)
 		{
 			cancel_waiting_for_nack(wait_node);
