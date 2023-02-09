@@ -11,14 +11,23 @@
 #include <linux/spinlock.h>
 #include "bitmap.h"
 #include <../../include/disagg/cnthread_disagg.h>
+#include <../../include/disagg/exec_disagg.h>
 #include <../../include/disagg/fault_disagg.h>
 #include <../../mm/internal.h>
+#include <linux/mm.h>
+#include <linux/mm_types.h>
+#include <linux/init.h>
+#include <linux/threads.h>
+#include <linux/mm.h>		/* for struct page */
+#include <linux/pagemap.h>
+#include <asm/paravirt.h>
 
 #include <../../roce_modules/roce_for_disagg/roce_disagg.h>
 #include <asm/traps.h>
 #include <../include/disagg/kshmem_disagg.h>
 
 #include "simplefs.h"
+
 
 
 int counter = 0;
@@ -434,10 +443,12 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		struct fault_reply_struct reply;
                 struct fault_reply_struct ret_buf;
                 struct cache_waiting_node *wait_node = NULL;
-                struct task_struct *tsk;
-		
+                struct task_struct tsk;
+		pr_info("tgid");	
 		//todo this wasn't done
-		tsk->tgid = 123;
+		tsk.tgid = 123;
+		pr_info("after tgid");	
+
                 struct cnthread_page *new_cnpage = NULL;
                 int wait_err = -1;
 		int cpu_id = get_cpu();
@@ -470,10 +481,10 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		//
 		//this sends the written data to the switch
 		//TODO might need to export some of these
-		struct cnthread_page * victim = find_cnpage_no_lock(tsk->tgid, address);
+		struct cnthread_page * victim = find_cnpage_no_lock(tsk.tgid, address);
 		struct range_lock pte_lock;
 		range_lock_init(&pte_lock, address >> PAGE_SHIFT, address >> PAGE_SHIFT); 
-
+		struct mm_struct *mm = get_init_mm(); 
 
 	        //TODO also do these checks for the other stuff	
 		if(victim != NULL){
@@ -481,8 +492,10 @@ static int simplefs_readpage(struct file *file, struct page *page)
 			//lock from 
 			//pte_t temp = ensure_pte(&init_mm, address, lock);
 			spinlock_t *ptl_ptr = NULL;	
-			pte_t *temppte = ensure_pte(&init_mm, address, &ptl_ptr);
+			pte_t *temppte = ensure_pte(mm, address, &ptl_ptr);
 
+			pr_info("writing data to memory node");
+			pr_info("writing data to memory node");
 
 			//writes data to that page
 			sprintf(address, "hello this is from the switch");
@@ -490,7 +503,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 			//TODO have to clean this before we read
 
 			//evict 
-			cn_copy_page_data_to_mn(DISAGG_KERN_TGID, &init_mm, address,
+			cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, address,
 									temppte, CN_OTHER_PAGE, 0, victim->dma_addr);
 	
 			//TODO do clean here so that we KNOW the data was from the switch
@@ -500,10 +513,11 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		
 
 		}
+
 		int is_kern_shared_mem = 1;
-                wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk->tgid, address & PAGE_MASK, new_cnpage);
+                wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk.tgid, address & PAGE_MASK, new_cnpage);
                 pr_info("address %d", address);
-                int fault = send_pfault_to_mn(tsk, error_code, address, 0, &ret_buf);
+                int fault = send_pfault_to_mn(&tsk, error_code, address, 0, &ret_buf);
 
                 pr_pgfault("CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, address);
                 wait_node->ack_buf = ret_buf.ack_buf;
