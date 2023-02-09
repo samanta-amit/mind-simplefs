@@ -5,6 +5,7 @@
 #include <linux/module.h>
 #include <linux/spinlock.h>
 #include <linux/slab.h>
+#include <../../mm/internal.h>
 
 #include "simplefs.h"
 
@@ -51,6 +52,10 @@ static int __init simplefs_init(void)
 {
     pr_info("loading simplefs\n");
 
+    unsigned long mm_addr;
+    struct task_struct *tsk;
+
+    
    test_spin_lock = kmalloc(sizeof(struct spinlock), GFP_KERNEL);
    /* initializes the spin lock */
     spin_lock_init(test_spin_lock);

@@ -15,14 +15,10 @@ __attribute__((section(".gnu.linkonce.this_module"))) = {
 	.arch = MODULE_ARCH_INIT,
 };
 
-#ifdef CONFIG_RETPOLINE
-MODULE_INFO(retpoline, "Y");
-#endif
-
 static const char __module_depends[]
 __used
 __attribute__((section(".modinfo"))) =
 "depends=";
 
 
-MODULE_INFO(srcversion, "02C1360AD5E0DEB694FE8BB");
+MODULE_INFO(srcversion, "7C73F621B84C0BFEA887380");

@@ -12,6 +12,8 @@
 #include "bitmap.h"
 #include <../../include/disagg/cnthread_disagg.h>
 #include <../../include/disagg/fault_disagg.h>
+#include <../../mm/internal.h>
+
 #include <../../roce_modules/roce_for_disagg/roce_disagg.h>
 #include <asm/traps.h>
 #include <../include/disagg/kshmem_disagg.h>
@@ -433,14 +435,19 @@ static int simplefs_readpage(struct file *file, struct page *page)
                 struct fault_reply_struct ret_buf;
                 struct cache_waiting_node *wait_node = NULL;
                 struct task_struct *tsk;
+		
+		//todo this wasn't done
+		tsk->tgid = 123;
                 struct cnthread_page *new_cnpage = NULL;
                 int wait_err = -1;
 		int cpu_id = get_cpu();
 		pr_info("page up to date %d", cpu_id);
 		static spinlock_t pgfault_lock;
 		wait_node = NULL;
-		unsigned long address;
-		unsigned long error_code;
+
+		//TODO this were not initialized, why?
+		unsigned long address = 0;
+		unsigned long error_code = 0;
 		struct fault_msg_struct payload;
 		payload.address = address;
 	        payload.error_code = error_code;
@@ -449,9 +456,51 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	
 	        ret_buf.data_size = PAGE_SIZE;
                 ret_buf.data = (void*)get_dummy_page_dma_addr(get_cpu());
+		pr_info("ret_buf address %d", ret_buf.data);
+
                 u64 alloc_size = sizeof(struct task_struct);
                 address = alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
-                int is_kern_shared_mem = 1;
+		pr_info("alloc kshmem address %d", address); 
+
+
+		//mm_struct is the memory structure
+		//is_target_data = 0
+		//pte from the page fault handler code 
+		//use the address that we alloc
+		//
+		//this sends the written data to the switch
+		//TODO might need to export some of these
+		struct cnthread_page * victim = find_cnpage_no_lock(tsk->tgid, address);
+		struct range_lock pte_lock;
+		range_lock_init(&pte_lock, address >> PAGE_SHIFT, address >> PAGE_SHIFT); 
+
+
+	        //TODO also do these checks for the other stuff	
+		if(victim != NULL){
+			//There is also find_pte_from_mm, so we need to figure out the mm part
+			//lock from 
+			//pte_t temp = ensure_pte(&init_mm, address, lock);
+			spinlock_t *ptl_ptr = NULL;	
+			pte_t *temppte = ensure_pte(&init_mm, address, &ptl_ptr);
+
+
+			//writes data to that page
+			sprintf(address, "hello this is from the switch");
+
+			//TODO have to clean this before we read
+
+			//evict 
+			cn_copy_page_data_to_mn(DISAGG_KERN_TGID, &init_mm, address,
+									temppte, CN_OTHER_PAGE, 0, victim->dma_addr);
+	
+			//TODO do clean here so that we KNOW the data was from the switch
+			//writes bad data to that page
+			sprintf(address, "this should not be seen");
+
+		
+
+		}
+		int is_kern_shared_mem = 1;
                 wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk->tgid, address & PAGE_MASK, new_cnpage);
                 pr_info("address %d", address);
                 int fault = send_pfault_to_mn(tsk, error_code, address, 0, &ret_buf);
@@ -475,7 +524,9 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		loff_t test = 0;//this is the offset into the page that we start making the change
 		//but since we are copying the entire page we should just start at zero
 
-		simplefs_kernel_page_write(page, ret_buf.data, ret_buf.data_size, &test);
+		//TODO commented out for now
+		simplefs_kernel_page_write(page, get_dummy_page_buf_addr(cpu_id), ret_buf.data_size, &test);
+
 	 	//PAGE_SIZE;
 		spin_unlock(&pgfault_lock);
 
