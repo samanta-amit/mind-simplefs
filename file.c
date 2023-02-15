@@ -446,7 +446,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
                 struct task_struct tsk;
 		pr_info("tgid");	
 		//todo this wasn't done
-		tsk.tgid = 123;
+		tsk.tgid = 1;
 		pr_info("after tgid");	
 
                 struct cnthread_page *new_cnpage = NULL;
@@ -466,53 +466,12 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		spin_lock(&pgfault_lock);
 	
 	        ret_buf.data_size = PAGE_SIZE;
-                ret_buf.data = (void*)get_dummy_page_dma_addr(get_cpu());
+                ret_buf.data = (void*)get_dummy_page_dma_addr(cpu_id);
 		pr_info("ret_buf address %d", ret_buf.data);
 
                 u64 alloc_size = sizeof(struct task_struct);
                 address = alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
 		pr_info("alloc kshmem address %d", address); 
-
-
-		//mm_struct is the memory structure
-		//is_target_data = 0
-		//pte from the page fault handler code 
-		//use the address that we alloc
-		//
-		//this sends the written data to the switch
-		//TODO might need to export some of these
-		struct cnthread_page * victim = find_cnpage_no_lock(tsk.tgid, address);
-		struct range_lock pte_lock;
-		range_lock_init(&pte_lock, address >> PAGE_SHIFT, address >> PAGE_SHIFT); 
-		struct mm_struct *mm = get_init_mm(); 
-
-	        //TODO also do these checks for the other stuff	
-		if(victim != NULL){
-			//There is also find_pte_from_mm, so we need to figure out the mm part
-			//lock from 
-			//pte_t temp = ensure_pte(&init_mm, address, lock);
-			spinlock_t *ptl_ptr = NULL;	
-			pte_t *temppte = ensure_pte(mm, address, &ptl_ptr);
-
-			pr_info("writing data to memory node");
-			pr_info("writing data to memory node");
-
-			//writes data to that page
-			sprintf(address, "hello this is from the switch");
-
-			//TODO have to clean this before we read
-
-			//evict 
-			cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, address,
-									temppte, CN_OTHER_PAGE, 0, victim->dma_addr);
-	
-			//TODO do clean here so that we KNOW the data was from the switch
-			//writes bad data to that page
-			sprintf(address, "this should not be seen");
-
-		
-
-		}
 
 		int is_kern_shared_mem = 1;
                 wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk.tgid, address & PAGE_MASK, new_cnpage);
@@ -528,16 +487,42 @@ static int simplefs_readpage(struct file *file, struct page *page)
 			cancel_waiting_for_nack(wait_node);
 		}
 
-		//wait_err = wait_ack_from_ctrl(wait_node, NULL, NULL, new_cnpage);
+		struct mm_struct *mm = get_init_mm(); 
 
-		//if(wait_err){
-			//goto return_and_retry;
-			//return; 
-		//}
+		spinlock_t *ptl_ptr = NULL;	
+		pte_t *temppte = ensure_pte(mm, (void*)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
+
+		//writes data to that page
+		sprintf((void*)get_dummy_page_buf_addr(cpu_id), "hello this is from the switch");
+
+		//evict 
+		spin_lock(ptl_ptr);
+		cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, address,
+				temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(cpu_id));
+		spin_unlock(ptl_ptr);
+
+
+		//writes bad data to that page
+		sprintf((void*)get_dummy_page_buf_addr(cpu_id), "this should not be seen");
+		struct task_struct tsk2;
+		pr_info("tgid");	
+		//todo this wasn't done
+		tsk2.tgid = 1;
+
+	        
+		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk2.tgid, address & PAGE_MASK, new_cnpage);
+                pr_info("second address %d", address);
+                fault = send_pfault_to_mn(&tsk2, error_code, address, 0, &ret_buf);
+                pr_info("after second pfault call ");
+
+                pr_pgfault("CN [%d]: second fault handler start waiting 0x%lx\n", cpu_id, address);
+                //wait_node->ack_buf = ret_buf.ack_buf;
+                pr_info("second fault %d", fault);
+	
+
 
 		loff_t test = 0;//this is the offset into the page that we start making the change
 		//but since we are copying the entire page we should just start at zero
-
 		//TODO commented out for now
 		simplefs_kernel_page_write(page, get_dummy_page_buf_addr(cpu_id), ret_buf.data_size, &test);
 
