@@ -6,13 +6,21 @@
 #include <linux/spinlock.h>
 #include <linux/slab.h>
 #include <../../mm/internal.h>
+#include <../../include/disagg/cnthread_disagg.h>
+#include <../../include/disagg/exec_disagg.h>
+#include <../../include/disagg/fault_disagg.h>
+#include <../../mm/internal.h>
+#include <../../roce_modules/roce_for_disagg/roce_disagg.h>
+#include <asm/traps.h>
+#include <../include/disagg/kshmem_disagg.h>
+
 
 #include "simplefs.h"
 
 /* spin locks for hashtable */
 struct spinlock *test_spin_lock;
 
-
+unsigned long sharedaddress;
 
 /* Mount a simplefs partition */
 struct dentry *simplefs_mount(struct file_system_type *fs_type,
@@ -55,7 +63,16 @@ static int __init simplefs_init(void)
     unsigned long mm_addr;
     struct task_struct *tsk;
 
-    
+    u64 alloc_size = sizeof(struct task_struct);
+    sharedaddress = alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
+    pr_info("alloc kshmem address %d", sharedaddress); 
+
+
+
+
+
+
+
    test_spin_lock = kmalloc(sizeof(struct spinlock), GFP_KERNEL);
    /* initializes the spin lock */
     spin_lock_init(test_spin_lock);

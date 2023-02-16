@@ -43,7 +43,7 @@ struct inode_item {
 /* spin locks for hashtable */
 //https://stackoverflow.com/questions/6792930/how-do-i-share-a-global-variable-between-c-files
 extern struct spinlock *test_spin_lock;
-
+extern unsigned long sharedaddress;
 
 //struct inode_item;
 //https://lwn.net/Articles/510202/
@@ -178,6 +178,9 @@ ssize_t simplefs_kernel_page_read(struct page * testpage, void * buf, size_t cou
 
 
 
+
+
+
 //Caller has to have inode lock
 //before calling this this deletes the page from the page cache
 //radix tree, and then also removes the entry in the hashtable
@@ -205,12 +208,69 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer){
 			struct page * testp = pagep;
 			pr_info("testing %d", testp->flags);
 			pr_info("testing2 %d", testbuffer);
-			simplefs_kernel_page_read(testp, testbuffer, 100, &test);
 
-			char * temp2 = testbuffer;
-			for(j = 0; j < 100; j++){
-				pr_info("invalidate read %c", temp2[j]);
+
+
+			struct fault_reply_struct reply;
+			struct fault_reply_struct ret_buf;
+			struct cache_waiting_node *wait_node = NULL;
+			struct task_struct tsk;
+			pr_info("inv tgid");	
+			//todo this wasn't done
+			tsk.tgid = 1;
+			pr_info("inv after tgid");	
+
+			struct cnthread_page *new_cnpage = NULL;
+			int wait_err = -1;
+			int cpu_id = get_cpu();
+			pr_info("inv page up to date %d", cpu_id);
+			static spinlock_t pgfault_lock;
+			wait_node = NULL;
+
+			//TODO this were not initialized, why?
+			unsigned long address = 0;
+			unsigned long error_code = 0;
+			struct fault_msg_struct payload;
+			payload.address = address;
+			payload.error_code = error_code;
+
+			spin_lock(&pgfault_lock);
+
+			ret_buf.data_size = PAGE_SIZE;
+			ret_buf.data = (void*)get_dummy_page_dma_addr(cpu_id);
+			pr_info("inv ret_buf address %d", ret_buf.data);
+
+			int is_kern_shared_mem = 1;
+			wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk.tgid, sharedaddress & PAGE_MASK, new_cnpage);
+			pr_info("inv address %d", sharedaddress);
+			int fault = send_pfault_to_mn(&tsk, error_code, sharedaddress, 0, &ret_buf);
+
+			pr_pgfault("inv CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, sharedaddress);
+			wait_node->ack_buf = ret_buf.ack_buf;
+			pr_info("inv fault %d", fault);
+
+			if(fault <= 0)
+			{
+				cancel_waiting_for_nack(wait_node);
 			}
+
+			struct mm_struct *mm = get_init_mm(); 
+
+			spinlock_t *ptl_ptr = NULL;	
+			pte_t *temppte = ensure_pte(mm, (void*)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
+
+			//writes data to that page
+			//copy data into dummy buffer, and send to switch
+			simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), 100, &test);
+
+
+			//evict 
+			spin_lock(ptl_ptr);
+			cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, sharedaddress,
+					temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(cpu_id));
+			spin_unlock(ptl_ptr);
+
+
 
 			//radix_tree_delete(&mapping->page_tree, pagenum);
 			ClearPageUptodate(testp);
@@ -469,56 +529,20 @@ static int simplefs_readpage(struct file *file, struct page *page)
                 ret_buf.data = (void*)get_dummy_page_dma_addr(cpu_id);
 		pr_info("ret_buf address %d", ret_buf.data);
 
-                u64 alloc_size = sizeof(struct task_struct);
-                address = alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
-		pr_info("alloc kshmem address %d", address); 
-
 		int is_kern_shared_mem = 1;
-                wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk.tgid, address & PAGE_MASK, new_cnpage);
-                pr_info("address %d", address);
-                int fault = send_pfault_to_mn(&tsk, error_code, address, 0, &ret_buf);
-
-                pr_pgfault("CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, address);
-                wait_node->ack_buf = ret_buf.ack_buf;
-                pr_info("fault %d", fault);
-
-		if(fault <= 0)
-		{
-			cancel_waiting_for_nack(wait_node);
-		}
-
-		struct mm_struct *mm = get_init_mm(); 
-
-		spinlock_t *ptl_ptr = NULL;	
-		pte_t *temppte = ensure_pte(mm, (void*)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
-
-		//writes data to that page
-		sprintf((void*)get_dummy_page_buf_addr(cpu_id), "hello this is from the switch");
-
-		//evict 
-		spin_lock(ptl_ptr);
-		cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, address,
-				temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(cpu_id));
-		spin_unlock(ptl_ptr);
-
-
-		//writes bad data to that page
-		sprintf((void*)get_dummy_page_buf_addr(cpu_id), "this should not be seen");
 		struct task_struct tsk2;
 		pr_info("tgid");	
 		//todo this wasn't done
 		tsk2.tgid = 1;
-
 	        
-		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk2.tgid, address & PAGE_MASK, new_cnpage);
-                pr_info("second address %d", address);
-                fault = send_pfault_to_mn(&tsk2, error_code, address, 0, &ret_buf);
+		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk2.tgid, sharedaddress & PAGE_MASK, new_cnpage);
+                pr_info("second address %d", sharedaddress);
+                int fault = send_pfault_to_mn(&tsk2, error_code, sharedaddress, 0, &ret_buf);
                 pr_info("after second pfault call ");
 
-                pr_pgfault("CN [%d]: second fault handler start waiting 0x%lx\n", cpu_id, address);
+                pr_pgfault("CN [%d]: second fault handler start waiting 0x%lx\n", cpu_id, sharedaddress);
                 //wait_node->ack_buf = ret_buf.ack_buf;
                 pr_info("second fault %d", fault);
-	
 
 
 		loff_t test = 0;//this is the offset into the page that we start making the change
