@@ -179,19 +179,96 @@ ssize_t simplefs_kernel_page_read(struct page * testpage, void * buf, size_t cou
 
 
 
+static bool invalidate_page_write(struct page * pagep){ 
+
+		//void *pagep;
+		int j;
+
+		loff_t test = 20; 
+		struct page * testp = pagep;
+		//pr_info("testing %d", testp->flags);
+
+
+		struct fault_reply_struct reply;
+		struct fault_reply_struct ret_buf;
+		struct cache_waiting_node *wait_node = NULL;
+		struct task_struct tsk3;
+		pr_info("inv tgid");	
+		//todo this wasn't done
+		tsk3.tgid = 1;
+		pr_info("inv after tgid");	
+
+		struct cnthread_page *new_cnpage = NULL;
+		int wait_err = -1;
+		int cpu_id = get_cpu();
+		pr_info("inv page up to date %d", cpu_id);
+		static spinlock_t pgfault_lock;
+		wait_node = NULL;
+
+		//TODO this were not initialized, why?
+		unsigned long address = 0;
+		unsigned long error_code = 0;
+		struct fault_msg_struct payload;
+		payload.address = address;
+		payload.error_code = error_code;
+
+		spin_lock(&pgfault_lock);
+
+		ret_buf.data_size = PAGE_SIZE;
+		ret_buf.data = (void*)get_dummy_page_dma_addr(cpu_id);
+		pr_info("inv ret_buf address %d", ret_buf.data);
+
+		int is_kern_shared_mem = 1;
+		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk3.tgid, sharedaddress & PAGE_MASK, new_cnpage);
+		pr_info("inv write address %d", sharedaddress);
+		int fault = send_pfault_to_mn(&tsk3, error_code, sharedaddress, 0, &ret_buf);
+
+		pr_pgfault("inv CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, sharedaddress);
+		wait_node->ack_buf = ret_buf.ack_buf;
+		pr_info("inv fault %d", fault);
+
+		if(fault <= 0)
+		{
+			cancel_waiting_for_nack(wait_node);
+		}
+
+		struct mm_struct *mm = get_init_mm(); 
+
+		spinlock_t *ptl_ptr = NULL;	
+		pte_t *temppte = ensure_pte(mm, (void*)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
+
+		//writes data to that page
+		//copy data into dummy buffer, and send to switch
+		simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), 100, &test);
+
+
+		//evict 
+		spin_lock(ptl_ptr);
+		cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, sharedaddress,
+				temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(cpu_id));
+		spin_unlock(ptl_ptr);
+		
+		spin_unlock(&pgfault_lock);
+
+		//spin_unlock_irq(&mapping->tree_lock);
+		return true;
+
+
+}
+
+
 
 
 //Caller has to have inode lock
 //before calling this this deletes the page from the page cache
 //radix tree, and then also removes the entry in the hashtable
-static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer){
+static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer, int invtype){
 
 	struct inode_item* inodecheck = pageinhashmap(i_ino, pagenum);
 	if (inodecheck != NULL){
 		void *pagep;
 		int j;
 		struct address_space *mapping = inodecheck->mapping;
-
 
 		spin_lock_irq(&mapping->tree_lock);
 
@@ -210,14 +287,14 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer){
 			pr_info("testing2 %d", testbuffer);
 
 
-
+			/*
 			struct fault_reply_struct reply;
 			struct fault_reply_struct ret_buf;
 			struct cache_waiting_node *wait_node = NULL;
 			struct task_struct tsk;
 			pr_info("inv tgid");	
 			//todo this wasn't done
-			tsk.tgid = 1;
+			tsk.tgid = 3;
 			pr_info("inv after tgid");	
 
 			struct cnthread_page *new_cnpage = NULL;
@@ -270,11 +347,14 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer){
 					temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(cpu_id));
 			spin_unlock(ptl_ptr);
 
-
+			//TODO this should be after we clear the pages
+			spin_unlock(&pgfault_lock);
+			*/
 
 			//radix_tree_delete(&mapping->page_tree, pagenum);
 			ClearPageUptodate(testp);
 			mapping->nrpages--; 
+
 		} 
 
 		//delete page from the hashmap
@@ -295,9 +375,9 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer){
 //or something. Something similar to this will be called
 //as a RPC by the switch to invalidate a page and copy
 //the information from it.
-static bool callinvalidatepage(unsigned long i_ino, int pagenum){
+static bool callinvalidatepage(unsigned long i_ino, int pagenum, int invtype){
 	char testbuffer[100];// = kmalloc(sizeof(100), GFP_KERNEL);
-	return invalidatepage(i_ino, pagenum, &testbuffer);
+	return invalidatepage(i_ino, pagenum, &testbuffer, invtype);
 }
 
 
@@ -659,6 +739,8 @@ static int simplefs_write_end(struct file *file,
     int ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
     if (ret < len) {
         pr_err("wrote less than requested.");
+	invalidate_page_write(page);
+
         return ret;
     }
 
@@ -705,7 +787,11 @@ static int simplefs_write_end(struct file *file,
         brelse(bh_index);
     }
 end:
+
+    invalidate_page_write(page);
+
     return ret;
+
 }
 
 
@@ -843,7 +929,7 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	pr_info("*****beginning read inode %d page %d", inode->i_ino, index);
 
 	//invalidating the page
-	callinvalidatepage(inode->i_ino, index);
+	callinvalidatepage(inode->i_ino, index, 1);
 
 
 
@@ -876,6 +962,8 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 
 }
 
+
+//TODO this is not used at all 
 ssize_t simplefs_file_write_iter(struct kiocb *iocb, struct iov_iter *from) {
 
 
@@ -931,6 +1019,7 @@ ssize_t simplefs_file_write_iter(struct kiocb *iocb, struct iov_iter *from) {
 
 	if (ret > 0)
 		ret = generic_write_sync(iocb, ret);
+
 	return ret;
 
 
@@ -949,6 +1038,6 @@ const struct file_operations simplefs_file_ops = {
     .llseek = generic_file_llseek,
     .owner = THIS_MODULE,
     .read_iter = simplefs_file_read_iter,
-    .write_iter = simplefs_file_write_iter,
+    .write_iter = generic_file_write_iter,
     .fsync = generic_file_fsync,
 };
