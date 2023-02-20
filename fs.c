@@ -21,6 +21,7 @@
 struct spinlock *test_spin_lock;
 
 unsigned long sharedaddress;
+spinlock_t pgfault_lock;
 
 /* Mount a simplefs partition */
 struct dentry *simplefs_mount(struct file_system_type *fs_type,
@@ -74,6 +75,9 @@ static int __init simplefs_init(void)
 
 
    test_spin_lock = kmalloc(sizeof(struct spinlock), GFP_KERNEL);
+//   pgfault_lock = kmalloc(sizeof(struct spinlock), GFP_KERNEL);
+   spin_lock_init(&pgfault_lock);
+
    /* initializes the spin lock */
     spin_lock_init(test_spin_lock);
 

@@ -43,7 +43,10 @@ struct inode_item {
 /* spin locks for hashtable */
 //https://stackoverflow.com/questions/6792930/how-do-i-share-a-global-variable-between-c-files
 extern struct spinlock *test_spin_lock;
+//extern struct spinlock *pgfault_lock;
+
 extern unsigned long sharedaddress;
+extern spinlock_t pgfault_lock;
 
 //struct inode_item;
 //https://lwn.net/Articles/510202/
@@ -195,25 +198,26 @@ static bool invalidate_page_write(struct page * pagep){
 		struct task_struct tsk3;
 		pr_info("inv tgid");	
 		//todo this wasn't done
-		tsk3.tgid = 1;
+		tsk3.tgid = DISAGG_KERN_TGID;
 		pr_info("inv after tgid");	
 
 		struct cnthread_page *new_cnpage = NULL;
 		int wait_err = -1;
 		int cpu_id = get_cpu();
 		pr_info("inv page up to date %d", cpu_id);
-		static spinlock_t pgfault_lock;
 		wait_node = NULL;
 
 		//TODO this were not initialized, why?
 		unsigned long address = 0;
 		unsigned long error_code = 0;
 		struct fault_msg_struct payload;
+		//static spinlock_t pgfault_lock;
 		payload.address = address;
 		payload.error_code = error_code;
 
 		spin_lock(&pgfault_lock);
-
+		pr_info("inbetween locks");
+		
 		ret_buf.data_size = PAGE_SIZE;
 		ret_buf.data = (void*)get_dummy_page_dma_addr(cpu_id);
 		pr_info("inv ret_buf address %d", ret_buf.data);
@@ -221,17 +225,23 @@ static bool invalidate_page_write(struct page * pagep){
 		int is_kern_shared_mem = 1;
 		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk3.tgid, sharedaddress & PAGE_MASK, new_cnpage);
 		pr_info("inv write address %d", sharedaddress);
+		pr_info("new printing");
+		pr_info("inv write ret buf test %d", &ret_buf);
+		pr_info("inv write tsk3 %d", &tsk3);
+	        pr_info("wait node address %d", &wait_node);		
 		int fault = send_pfault_to_mn(&tsk3, error_code, sharedaddress, 0, &ret_buf);
-
+		pr_info("inv write after pagefault fault is %d", fault);
 		pr_pgfault("inv CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, sharedaddress);
-		wait_node->ack_buf = ret_buf.ack_buf;
-		pr_info("inv fault %d", fault);
+		pr_info("before wait node");
+
+		//wait_node->ack_buf = ret_buf.ack_buf;
+		pr_info("inv write fault %d", fault);
 
 		if(fault <= 0)
 		{
 			cancel_waiting_for_nack(wait_node);
 		}
-
+			
 		struct mm_struct *mm = get_init_mm(); 
 
 		spinlock_t *ptl_ptr = NULL;	
@@ -239,16 +249,17 @@ static bool invalidate_page_write(struct page * pagep){
 
 		//writes data to that page
 		//copy data into dummy buffer, and send to switch
-		simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), 100, &test);
-
+		//simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), 100, &test);
+		sprintf((void*)get_dummy_page_buf_addr(cpu_id), "hello this is from the switch");
 
 		//evict 
 		spin_lock(ptl_ptr);
 		cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, sharedaddress,
 				temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(cpu_id));
 		spin_unlock(ptl_ptr);
-		
+			
 		spin_unlock(&pgfault_lock);
+		pr_info("outside locks");
 
 		//spin_unlock_irq(&mapping->tree_lock);
 		return true;
@@ -593,7 +604,6 @@ static int simplefs_readpage(struct file *file, struct page *page)
                 int wait_err = -1;
 		int cpu_id = get_cpu();
 		pr_info("page up to date %d", cpu_id);
-		static spinlock_t pgfault_lock;
 		wait_node = NULL;
 
 		//TODO this were not initialized, why?
@@ -602,6 +612,8 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		struct fault_msg_struct payload;
 		payload.address = address;
 	        payload.error_code = error_code;
+		//static spinlock_t pgfault_lock;
+		
 		
 		spin_lock(&pgfault_lock);
 	
@@ -624,7 +636,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
                 //wait_node->ack_buf = ret_buf.ack_buf;
                 pr_info("second fault %d", fault);
 
-
+		
 		loff_t test = 0;//this is the offset into the page that we start making the change
 		//but since we are copying the entire page we should just start at zero
 		//TODO commented out for now
