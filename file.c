@@ -186,7 +186,7 @@ static bool invalidate_page_write(struct page * pagep){
 
 		//void *pagep;
 		int j;
-
+		int i;
 		loff_t test = 20; 
 		struct page * testp = pagep;
 		//pr_info("testing %d", testp->flags);
@@ -249,8 +249,12 @@ static bool invalidate_page_write(struct page * pagep){
 
 		//writes data to that page
 		//copy data into dummy buffer, and send to switch
-		//simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), 100, &test);
-		sprintf((void*)get_dummy_page_buf_addr(cpu_id), "hello this is from the switch");
+		simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), 100, &test);
+		//sprintf((void*)get_dummy_page_buf_addr(cpu_id), "hello this is from the switch");
+
+		for(i = 0; i < 20; i++){
+			pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(cpu_id))[i]);
+		}
 
 		//evict 
 		spin_lock(ptl_ptr);
