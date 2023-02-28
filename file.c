@@ -249,7 +249,7 @@ static bool invalidate_page_write(struct page * pagep){
 
 		//writes data to that page
 		//copy data into dummy buffer, and send to switch
-		simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), 100, &test);
+		//simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), 100, &test);
 		//sprintf((void*)get_dummy_page_buf_addr(cpu_id), "hello this is from the switch");
 
 		for(i = 0; i < 20; i++){
@@ -260,6 +260,9 @@ static bool invalidate_page_write(struct page * pagep){
 		spin_lock(ptl_ptr);
 		cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, sharedaddress,
 				temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(cpu_id));
+
+		static struct cnthread_inv_msg_ctx send_ctx;
+		cnthread_send_finish_ack(tsk3.tgid, sharedaddress & PAGE_MASK, &send_ctx, 1);
 		spin_unlock(ptl_ptr);
 			
 		spin_unlock(&pgfault_lock);
