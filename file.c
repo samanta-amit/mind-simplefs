@@ -46,6 +46,8 @@ extern struct spinlock *test_spin_lock;
 //extern struct spinlock *pgfault_lock;
 
 extern unsigned long sharedaddress;
+extern unsigned long shmem_address[10];
+
 extern spinlock_t pgfault_lock;
 
 //struct inode_item;
@@ -182,15 +184,16 @@ ssize_t simplefs_kernel_page_read(struct page * testpage, void * buf, size_t cou
 
 
 
-static bool invalidate_page_write(struct page * pagep){ 
-
+static bool invalidate_page_write(struct inode * inode, struct page * pagep){ 
 		//void *pagep;
 		int j;
 		int i;
 		loff_t test = 20; 
 		struct page * testp = pagep;
 		//pr_info("testing %d", testp->flags);
-
+		int page_number = pagep->index;
+		int inode_number = inode->i_ino;
+		pr_info("******writing page number %d inode number %d", page_number, inode_number);
 
 		struct fault_reply_struct reply;
 		struct fault_reply_struct ret_buf;
@@ -223,15 +226,15 @@ static bool invalidate_page_write(struct page * pagep){
 		pr_info("inv ret_buf address %d", ret_buf.data);
 
 		int is_kern_shared_mem = 1;
-		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk3.tgid, sharedaddress & PAGE_MASK, new_cnpage);
-		pr_info("inv write address %d", sharedaddress);
+		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk3.tgid, shmem_address[inode_number] & PAGE_MASK, new_cnpage);
+		pr_info("inv write address %d", shmem_address[inode_number]);
 		pr_info("new printing");
 		pr_info("inv write ret buf test %d", &ret_buf);
 		pr_info("inv write tsk3 %d", &tsk3);
 	        pr_info("wait node address %d", &wait_node);		
-		int fault = send_pfault_to_mn(&tsk3, error_code, sharedaddress, 0, &ret_buf);
+		int fault = send_pfault_to_mn(&tsk3, error_code, shmem_address[inode_number], 0, &ret_buf);
 		pr_info("inv write after pagefault fault is %d", fault);
-		pr_pgfault("inv CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, sharedaddress);
+		pr_pgfault("inv CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, shmem_address[inode_number]);
 		pr_info("before wait node");
 
 		//wait_node->ack_buf = ret_buf.ack_buf;
@@ -249,20 +252,20 @@ static bool invalidate_page_write(struct page * pagep){
 
 		//writes data to that page
 		//copy data into dummy buffer, and send to switch
-		//simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), 100, &test);
-		//sprintf((void*)get_dummy_page_buf_addr(cpu_id), "hello this is from the switch");
+		simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), 100, &test);
+		//sprintf((void*)get_dummy_page_buf_addr(cpu_id), "yay it worked! testing write from 135______ this is working got from 135 ");
 
-		for(i = 0; i < 20; i++){
+		/*for(i = 0; i < 20; i++){
 			pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(cpu_id))[i]);
-		}
+		}*/
 
 		//evict 
 		spin_lock(ptl_ptr);
-		cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, sharedaddress,
+		cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, shmem_address[inode_number],
 				temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(cpu_id));
 
 		static struct cnthread_inv_msg_ctx send_ctx;
-		cnthread_send_finish_ack(tsk3.tgid, sharedaddress & PAGE_MASK, &send_ctx, 1);
+		cnthread_send_finish_ack(tsk3.tgid, shmem_address[inode_number] & PAGE_MASK, &send_ctx, 1);
 		spin_unlock(ptl_ptr);
 			
 		spin_unlock(&pgfault_lock);
@@ -552,10 +555,13 @@ map_buffer_to_page(struct page *page, struct buffer_head *bh, int page_block)
 static int simplefs_readpage(struct file *file, struct page *page)
 {
     //TODO coherence stuff should also occur here
-    pr_info("******reading page number %d", page->index);
     struct address_space *mapping = file->f_mapping; 
     struct inode *inode = mapping->host;
-    int temp = page->index;
+    //can get inode number from inode pointer
+    int temp = page->index; //page number
+    int page_number = page->index;
+    int inode_number = inode->i_ino;
+    pr_info("******reading page number %d inode number %d", page_number, inode_number);
     int result = 0;
     int i;
     int error = 0;
@@ -634,12 +640,12 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		//todo this wasn't done
 		tsk2.tgid = 1;
 	        
-		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk2.tgid, sharedaddress & PAGE_MASK, new_cnpage);
-                pr_info("second address %d", sharedaddress);
-                int fault = send_pfault_to_mn(&tsk2, error_code, sharedaddress, 0, &ret_buf);
+		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk2.tgid, shmem_address[inode_number] & PAGE_MASK, new_cnpage);
+                pr_info("second address %d", shmem_address[inode_number]);
+                int fault = send_pfault_to_mn(&tsk2, error_code, shmem_address[inode_number], 0, &ret_buf);
                 pr_info("after second pfault call ");
 
-                pr_pgfault("CN [%d]: second fault handler start waiting 0x%lx\n", cpu_id, sharedaddress);
+                pr_pgfault("CN [%d]: second fault handler start waiting 0x%lx\n", cpu_id, shmem_address[inode_number]);
                 //wait_node->ack_buf = ret_buf.ack_buf;
                 pr_info("second fault %d", fault);
 
@@ -758,7 +764,7 @@ static int simplefs_write_end(struct file *file,
     int ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
     if (ret < len) {
         pr_err("wrote less than requested.");
-	invalidate_page_write(page);
+	invalidate_page_write(inode, page);
 
         return ret;
     }
@@ -807,7 +813,7 @@ static int simplefs_write_end(struct file *file,
     }
 end:
 
-    invalidate_page_write(page);
+    invalidate_page_write(inode, page);
 
     return ret;
 

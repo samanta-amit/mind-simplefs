@@ -14,13 +14,22 @@
 #include <asm/traps.h>
 #include <../include/disagg/kshmem_disagg.h>
 
+#include <linux/init.h>
 
 #include "simplefs.h"
+
 
 /* spin locks for hashtable */
 struct spinlock *test_spin_lock;
 
 unsigned long sharedaddress;
+unsigned long shmem_address[10];
+static int readAddress = 0;
+//https://lynxbee.com/passing-command-line-arguments-parameters-to-linux-kernel-module/#.ZAUI5oDMKCg
+//https://tldp.org/LDP/lkmpg/2.4/html/x354.htm (also used this for printing longs)
+module_param(readAddress,int, 0);
+module_param_array(shmem_address, long, NULL, 0);
+
 spinlock_t pgfault_lock;
 
 /* Mount a simplefs partition */
@@ -60,19 +69,38 @@ static struct file_system_type simplefs_file_system_type = {
 static int __init simplefs_init(void)
 {
     pr_info("loading simplefs\n");
-
     unsigned long mm_addr;
+    int i;
     struct task_struct *tsk;
+    pr_info("value of readAddress %d", readAddress);
+    u64 alloc_size = sizeof(3 * PAGE_SIZE);
+    sharedaddress = 18446718784707231744;   //-234881024; //alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
 
-    u64 alloc_size = sizeof(struct task_struct);
-    sharedaddress = alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
-    pr_info("alloc kshmem address %d", sharedaddress); 
-    unsigned long test_address = 64 * PAGE_SIZE;
-    unsigned long test_size = 128 * PAGE_SIZE;
+
+    if(!readAddress){
+	    pr_info("addresses:");
+	    for(i = 0; i < 10; i++){
+		    shmem_address[i] = alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
+		    pr_info("%ld, ", shmem_address[i]);
+	    }
+	    pr_info("\n");
+    }else{
+	    pr_info("read addresses:");
+	    for(i = 0; i < 10; i++){
+		    pr_info("%ld, ", shmem_address[i]);
+	    }
+	    pr_info("\n");
+
+
+    }
+
+    //pr_info("alloc kshmem address %ld", sharedaddress); 
+  //  unsigned long test_address = 64 * PAGE_SIZE;
+   // unsigned long test_size = 128 * PAGE_SIZE;
  
-   unsigned long temp = alloc_kshmem_va(test_address, test_size, DISAGG_KSHMEM_SERV_FS_ID);
-   pr_info("KernShmem: alloc with VA result Requested [0x%lx] <-> Received [0x%lx]\n",
-		    test_address, temp);
+   //unsigned long temp = alloc_kshmem_va(test_address, test_size, DISAGG_KSHMEM_SERV_FS_ID);
+   //pr_info("KernShmem: alloc with VA result Requested [0x%lx] <-> Received [0x%lx]\n",
+//		    test_address, temp);
 
 
    
