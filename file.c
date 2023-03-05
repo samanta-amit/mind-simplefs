@@ -374,7 +374,7 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer, 
 
 			//radix_tree_delete(&mapping->page_tree, pagenum);
 			ClearPageUptodate(testp);
-			mapping->nrpages--; 
+			//mapping->nrpages--; TODO figure out if we need this
 
 		} 
 
@@ -562,6 +562,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
     int page_number = page->index;
     int inode_number = inode->i_ino;
     pr_info("******reading page number %d inode number %d", page_number, inode_number);
+    performcoherence(inode, page_number, mapping, 2);
     int result = 0;
     int i;
     int error = 0;
@@ -938,7 +939,7 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 
 
 
-	/*      ~*~       */
+	/*      ~*~       */ //TODO REMOVE THIS
 	inode_lock(inode);
 	/*      ~*~       */
 
@@ -969,9 +970,6 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	int i;
 	char * base = ((iter->iov)->iov_base);
 
-	for(i = 0; i < 100; i++){
-		//pr_info("testing %c", base[i]);
-	}
 
 	
 	/*      ~*~       */
