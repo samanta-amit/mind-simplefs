@@ -252,7 +252,7 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 
 		//writes data to that page
 		//copy data into dummy buffer, and send to switch
-		simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), 100, &test);
+		simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), PAGE_SIZE, &test);
 		//sprintf((void*)get_dummy_page_buf_addr(cpu_id), "yay it worked! testing write from 135______ this is working got from 135 ");
 
 		/*for(i = 0; i < 20; i++){

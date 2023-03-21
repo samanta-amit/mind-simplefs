@@ -93,15 +93,15 @@ static int __init simplefs_init(void)
 
 
     }
+    
+    for(i = 0; i < 10; i++){
+	    pr_info("alloc kshmem address %ld", sharedaddress); 
+	    unsigned long test_address =  64 * PAGE_SIZE + (i+1) * (unsigned long)(0x200000);
+	    unsigned long test_size = 3 * PAGE_SIZE;
 
-    //pr_info("alloc kshmem address %ld", sharedaddress); 
-  //  unsigned long test_address = 64 * PAGE_SIZE;
-   // unsigned long test_size = 128 * PAGE_SIZE;
- 
-   //unsigned long temp = alloc_kshmem_va(test_address, test_size, DISAGG_KSHMEM_SERV_FS_ID);
-   //pr_info("KernShmem: alloc with VA result Requested [0x%lx] <-> Received [0x%lx]\n",
-//		    test_address, temp);
-
+	    unsigned long temp = alloc_kshmem_va(test_address, test_size, DISAGG_KSHMEM_SERV_FS_ID);
+	    pr_info("KernShmem: alloc with VA result Requested [0x%lx] <-> Received [0x%lx]\n", test_address, temp);
+    }
 
    
 
