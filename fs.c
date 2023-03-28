@@ -83,6 +83,18 @@ static int __init simplefs_init(void)
 		    shmem_address[i] = alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
 		    pr_info("%ld, ", shmem_address[i]);
 	    }
+		pr_info("single print addresses %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld", shmem_address[0],
+				shmem_address[1],
+				shmem_address[2],
+				shmem_address[3],
+				shmem_address[4],
+				shmem_address[5],
+				shmem_address[6],
+				shmem_address[7],
+				shmem_address[8],
+				shmem_address[9]
+				);
+
 	    pr_info("\n");
     }else{
 	    pr_info("read addresses:");

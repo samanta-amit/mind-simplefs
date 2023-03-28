@@ -249,7 +249,8 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 		{
 			cancel_waiting_for_nack(wait_node);
 		}
-			
+		//wait_err = wait_ack_from_ctrl(wait_node, NULL, NULL, new_cnpage);	
+
 		struct mm_struct *mm = get_init_mm(); 
 
 		spinlock_t *ptl_ptr = NULL;	
@@ -385,7 +386,7 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer, 
 
 		//delete page from the hashmap
 		hash_del(&(inodecheck->myhash_list));
-		pr_info("invalidated pagd page");
+		pr_info("invalidated page page inode %d %d", i_ino, pagenum);
 		spin_unlock_irq(&mapping->tree_lock);
 		return true;
 	}else{
