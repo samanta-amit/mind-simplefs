@@ -225,16 +225,21 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 		ret_buf.data = (void*)get_dummy_page_dma_addr(cpu_id);
 		pr_info("inv ret_buf address %d", ret_buf.data);
 
+
+
+		unsigned long current_shmem = (shmem_address[inode_number] + (PAGE_SIZE * (page_number)));
+
+
 		int is_kern_shared_mem = 1;
-		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk3.tgid, shmem_address[inode_number] & PAGE_MASK, new_cnpage);
-		pr_info("inv write address %d", shmem_address[inode_number]);
+		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk3.tgid, current_shmem, new_cnpage);
+		pr_info("inv write address %d",current_shmem); 
 		pr_info("new printing");
 		pr_info("inv write ret buf test %d", &ret_buf);
 		pr_info("inv write tsk3 %d", &tsk3);
 	        pr_info("wait node address %d", &wait_node);		
-		int fault = send_pfault_to_mn(&tsk3, error_code, shmem_address[inode_number], 0, &ret_buf);
+		int fault = send_pfault_to_mn(&tsk3, error_code, current_shmem, 0, &ret_buf);
 		pr_info("inv write after pagefault fault is %d", fault);
-		pr_pgfault("inv CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, shmem_address[inode_number]);
+		pr_pgfault("inv CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, current_shmem);
 		pr_info("before wait node");
 
 		//wait_node->ack_buf = ret_buf.ack_buf;
@@ -261,11 +266,11 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 
 		//evict 
 		spin_lock(ptl_ptr);
-		cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, shmem_address[inode_number],
+		cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, current_shmem,
 				temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(cpu_id));
 
 		static struct cnthread_inv_msg_ctx send_ctx;
-		cnthread_send_finish_ack(tsk3.tgid, shmem_address[inode_number] & PAGE_MASK, &send_ctx, 1);
+		cnthread_send_finish_ack(tsk3.tgid, current_shmem, &send_ctx, 1);
 		spin_unlock(ptl_ptr);
 			
 		spin_unlock(&pgfault_lock);
@@ -640,13 +645,16 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		pr_info("tgid");	
 		//todo this wasn't done
 		tsk2.tgid = 1;
-	        
-		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk2.tgid, shmem_address[inode_number] & PAGE_MASK, new_cnpage);
-                pr_info("second address %d", shmem_address[inode_number]);
-                int fault = send_pfault_to_mn(&tsk2, error_code, shmem_address[inode_number], 0, &ret_buf);
+	       
+		unsigned long current_shmem = (shmem_address[inode_number] + (PAGE_SIZE * (page_number)));
+
+
+		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk2.tgid, current_shmem, new_cnpage);
+                pr_info("second address %d", current_shmem); 
+                int fault = send_pfault_to_mn(&tsk2, error_code, current_shmem, 0, &ret_buf);
                 pr_info("after second pfault call ");
 
-                pr_pgfault("CN [%d]: second fault handler start waiting 0x%lx\n", cpu_id, shmem_address[inode_number]);
+                pr_pgfault("CN [%d]: second fault handler start waiting 0x%lx\n", cpu_id, current_shmem); 
                 //wait_node->ack_buf = ret_buf.ack_buf;
                 pr_info("second fault %d", fault);
 
@@ -701,18 +709,20 @@ static int simplefs_write_begin(struct file *file,
 {
 
 	    unsigned int currentpage = pos / PAGE_SIZE;
-    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
-    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
-    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
-    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
-    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
-    pr_info("write begin page number %d, for inode %d write pos %d  write length %d", currentpage, (file->f_inode)->i_ino, pos, len);
+	    unsigned int lastpage = (pos + len) / PAGE_SIZE;
+    pr_info("write begin page number %d end page number %d, for inode %d write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d end page number %d, for inode %d write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d end page number %d, for inode %d write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d end page number %d, for inode %d write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
+
 
     struct inode *inode = file->f_inode;
 
 
     //need to do the currentpage thing and not pass in the 
     //actual page since it causes null dereference stuff
+    //
+    //TODO perform coherence on multiple pages
     performcoherence(inode, currentpage, mapping, 2);
 
 
