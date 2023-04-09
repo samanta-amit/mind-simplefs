@@ -57,7 +57,7 @@ extern spinlock_t pgfault_lock;
 //8 bits = 256 buckets
 DEFINE_HASHTABLE(inode_msi_table, 8); 
 
-
+static struct rdma_context roce_ctx;
 
 
 
@@ -225,37 +225,34 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 		ret_buf.data = (void*)get_dummy_page_dma_addr(cpu_id);
 		pr_info("inv ret_buf address %d", ret_buf.data);
 
+		int conn_id = smp_processor_id();
+		char *ack_buf = roce_ctx.local_rdma_recv_rings[DISAGG_QP_ACK_OFFSET + conn_id];
+                //pr_rdma(KERN_DEFAULT "RDMA ACK BUF: 0x%lx, DMA: 0x%lx\n",
+                //	(unsigned long)*ack_buf, (unsigned long)roce_ctx.local_rdma_ring_mrs[DISAGG_QP_ACK_OFFSET + conn_id].dma_addr);
+
                 unsigned long current_shmem = (shmem_address[inode_number] + (PAGE_SIZE * (page_number)));
 
-		struct cache_waiting_node *w_node = NULL;
-		static char *ack_buf = NULL;
-		//char *buf = w_node->ack_buf;
-    		void *buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
-		u64 fva = parse_vaddr(buf);
-    		u32 rkey = parse_rkey(buf);
-    		u16 pid = (unsigned int)(fva >> 48);
-		pr_info("pid:0x%u", pid);
-    		u64 vaddr = fva & (~MN_VA_PID_BIT_MASK);            // Pure virtual address (48bits)
-    		pr_info("vaddr:0x%llx", vaddr);
-		u32 state = rkey & CACHELINE_ROCE_RKEY_STATE_MASK;
-		pr_info("state:0x%x", state);
+		unsigned long start_time = jiffies;
+	        struct cache_waiting_node *node = NULL;
+	        int is_kern_shared_mem = 1;
+		node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk3.tgid, current_shmem, new_cnpage);	
+		u16 state = 0, sharer = 0;
+		u16 dir_size, dir_lock, inv_cnt;
+
+		pr_info("before send_pfault_to_mn");
 		
-		if (pid == DISAGG_KERN_TGID)
-    		{
-        		vaddr |= MN_VA_PID_BIT_MASK;  // kernel's virtual address starts from 0xffff
-    		}
-
-		//u16 r_state = 0, r_sharer = 0, r_size = 0, r_lock = 0, r_cnt = 0;
-                u16 r_state, r_sharer, r_size, r_lock, r_cnt;
-
-		send_cache_dir_full_check(pid, vaddr & PAGE_MASK,
-                                    &r_state, &r_sharer, &r_size, &r_lock, &r_cnt, CN_SWITCH_REG_SYNC_NONE);
-                printk(KERN_WARNING "ERROR: RDMA-NACK [%u] recieved for PID: %u, VA: 0x%llx, state: 0x%x, sharer: 0x%x, size: %u, lock: %u, cnt: %u\n",
-                state, pid, vaddr, r_state, r_sharer, r_size, r_lock, r_cnt);
+		send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
+                                             &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
+                
+		printk(KERN_WARNING "ERROR: Cannot receive ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
+                   smp_processor_id(), node->tgid, node->addr,
+                   atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
+                   jiffies_to_msecs(jiffies - start_time), state, sharer);
 
 
-		int is_kern_shared_mem = 1;
+		//int is_kern_shared_mem = 1;
 		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk3.tgid, current_shmem, new_cnpage);
+		
 		pr_info("inv write address %d",current_shmem); 
 		pr_info("new printing");
 		pr_info("inv write ret buf test %d", &ret_buf);
@@ -264,13 +261,17 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 		int fault = send_pfault_to_mn(&tsk3, error_code, current_shmem, 0, &ret_buf);
 		pr_info("inv write after pagefault fault is %d", fault);
 		pr_pgfault("inv CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, current_shmem);
+		pr_info("after send_pfault_to_mn");
+                
+		send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
+                                             &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
+                printk(KERN_WARNING "ERROR: Cannot receive ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
+                   smp_processor_id(), node->tgid, node->addr,
+                   atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
+                   jiffies_to_msecs(jiffies - start_time), state, sharer);
+
 		pr_info("before wait node");
 
-                send_cache_dir_full_check(pid, vaddr & PAGE_MASK,
-                                    &r_state, &r_sharer, &r_size, &r_lock, &r_cnt, CN_SWITCH_REG_SYNC_NONE);
-                printk(KERN_WARNING "ERROR: RDMA-NACK [%u] recieved for PID: %u, VA: 0x%llx, state: 0x%x, sharer: 0x%x, size: %u, lock: %u, cnt: %u\n",
-                state, pid, vaddr, r_state, r_sharer, r_size, r_lock, r_cnt);
-		
 		//wait_node->ack_buf = ret_buf.ack_buf;
 		pr_info("inv write fault %d", fault);
 
@@ -298,20 +299,30 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 		spin_lock(ptl_ptr);
 		cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, current_shmem,
 				temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(cpu_id));
+                                
+		pr_info("after cn_copy_page_data_to_mn");
+		send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
+                                             &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
                 
-		send_cache_dir_full_check(pid, vaddr & PAGE_MASK,
-                                    &r_state, &r_sharer, &r_size, &r_lock, &r_cnt, CN_SWITCH_REG_SYNC_NONE);
-                printk(KERN_WARNING "ERROR: RDMA-NACK [%u] recieved for PID: %u, VA: 0x%llx, state: 0x%x, sharer: 0x%x, size: %u, lock: %u, cnt: %u\n",
-                state, pid, vaddr, r_state, r_sharer, r_size, r_lock, r_cnt);
+		printk(KERN_WARNING "ERROR: Cannot receive ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
+                   smp_processor_id(), node->tgid, node->addr,
+                   atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
+                   jiffies_to_msecs(jiffies - start_time), state, sharer);
 		
 		static struct cnthread_inv_msg_ctx send_ctx;
 		cnthread_send_finish_ack(tsk3.tgid, current_shmem, &send_ctx, 1);
-		spin_unlock(ptl_ptr);
 
-                send_cache_dir_full_check(pid, vaddr & PAGE_MASK,
-                                    &r_state, &r_sharer, &r_size, &r_lock, &r_cnt, CN_SWITCH_REG_SYNC_NONE);
-                printk(KERN_WARNING "ERROR: RDMA-NACK [%u] recieved for PID: %u, VA: 0x%llx, state: 0x%x, sharer: 0x%x, size: %u, lock: %u, cnt: %u\n",
-                state, pid, vaddr, r_state, r_sharer, r_size, r_lock, r_cnt);
+		pr_info("after cnthread_send_finish_ack");
+
+                send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
+                                             &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
+
+                printk(KERN_WARNING "ERROR: Cannot receive ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
+                   smp_processor_id(), node->tgid, node->addr,
+                   atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
+                   jiffies_to_msecs(jiffies - start_time), state, sharer);
+
+		spin_unlock(ptl_ptr);
 
 		spin_unlock(&pgfault_lock);
 		pr_info("outside locks");
