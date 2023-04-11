@@ -697,35 +697,31 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		tsk2.tgid = DISAGG_KERN_TGID;
 
 		int conn_id = smp_processor_id();
-		char *ack_buf = roce_ctx.local_rdma_recv_rings[DISAGG_QP_ACK_OFFSET + conn_id];
-                //pr_rdma(KERN_DEFAULT "RDMA ACK BUF: 0x%lx, DMA: 0x%lx\n",
-                //	(unsigned long)*ack_buf, (unsigned long)roce_ctx.local_rdma_ring_mrs[DISAGG_QP_ACK_OFFSET + conn_id].dma_addr);
-
-
+		
 		unsigned long current_shmem = (shmem_address[inode_number] + (PAGE_SIZE * (page_number)));
 
 		unsigned long start_time = jiffies;
 	        struct cache_waiting_node *node = NULL;
-		//node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk2.tgid, current_shmem, new_cnpage);	
+		node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk2.tgid, current_shmem, new_cnpage);	
 		u16 state = 0, sharer = 0;
 		u16 dir_size, dir_lock, inv_cnt;
 
 		pr_info("before send_pfault_to_mn readpath");
-		//pr_info("node pointer %d", node);	
-		//pr_info("node tgid %d", node->tgid);	
-		//pr_info("node addr %d", node->addr);	
+		pr_info("node pointer %d", node);	
+		pr_info("node tgid %d", node->tgid);	
+		pr_info("node addr %d", node->addr);	
 
-		//send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
-                    //                         &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
+		send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
+                                             &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
                 
-		/*printk(KERN_WARNING " READ PATH BEFORE PFAULT ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
+		printk(KERN_WARNING " READ PATH BEFORE PFAULT ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
                    smp_processor_id(), node->tgid, node->addr,
                    atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
                    jiffies_to_msecs(jiffies - start_time), state, sharer);
-		*/	
+			
 
 
-		wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk2.tgid, current_shmem, new_cnpage);
+		wait_node = node; //add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk2.tgid, current_shmem, new_cnpage);
                 pr_info("second address %d", current_shmem); 
                 int fault = send_pfault_to_mn(&tsk2, error_code, current_shmem, 0, &ret_buf);
                 pr_info("after second pfault call ");
@@ -733,17 +729,26 @@ static int simplefs_readpage(struct file *file, struct page *page)
 
 
                 pr_pgfault("CN [%d]: second fault handler start waiting 0x%lx\n", cpu_id, current_shmem); 
-                //wait_node->ack_buf = ret_buf.ack_buf;
+       
                 pr_info("second fault %d", fault);
+         	wait_node->ack_buf = ret_buf.ack_buf;
+
+		if(fault <= 0)
+		{
+			cancel_waiting_for_nack(wait_node);
+		}
+		wait_err = wait_ack_from_ctrl(wait_node, NULL, NULL, new_cnpage);	
+
+
 		pr_info("after send_pfault_to_mn");
-		//send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
-                   //                          &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
+		send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
+                                             &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
                 
-		/*printk(KERN_WARNING " READ PATH AFTER PFAULT ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
+		printk(KERN_WARNING " READ PATH AFTER PFAULT ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
                    smp_processor_id(), node->tgid, node->addr,
                    atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
                    jiffies_to_msecs(jiffies - start_time), state, sharer);
-		*/
+		
 
 		
 		loff_t test = 0;//this is the offset into the page that we start making the change
@@ -753,14 +758,14 @@ static int simplefs_readpage(struct file *file, struct page *page)
 
 
 		pr_info("read path after page write");
-		//send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
-                  //                           &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
+		send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
+                                             &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
                 
-		/*printk(KERN_WARNING " READ PATH AFTER PAGEWRITE ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
+		printk(KERN_WARNING " READ PATH AFTER PAGEWRITE ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
                    smp_processor_id(), node->tgid, node->addr,
                    atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
                    jiffies_to_msecs(jiffies - start_time), state, sharer);
-		*/
+		
 
 
 
