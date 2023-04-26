@@ -202,7 +202,10 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 		pr_info("inv tgid");	
 		//todo this wasn't done
 		tsk3.tgid = DISAGG_KERN_TGID;
-		pr_info("inv after tgid");	
+		pr_info("inv after tgid");
+	        
+	        struct task_struct tsk2;
+	        tsk2.tgid = DISAGG_KERN_TGID;	
 
 		struct cnthread_page *new_cnpage = NULL;
 		int wait_err = -1;
@@ -237,15 +240,15 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 
 		pr_info("before send_pfault_to_mn write path");
 		pr_info("node pointer %d", node);	
-		pr_info("node tgid %d", node->tgid);	
-		pr_info("node addr %d", node->addr);	
+		pr_info("node tgid %d", tsk3.tgid);	
+		pr_info("node addr %d", current_shmem);	
 
 
-		send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
+		send_cache_dir_full_always_check(tsk2.tgid, current_shmem, &state, &sharer,
                                              &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
                 
 		printk(KERN_WARNING "ERROR: Cannot receive ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
-                   smp_processor_id(), node->tgid, node->addr,
+                   smp_processor_id(), tsk2.tgid, current_shmem,
                    atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
                    jiffies_to_msecs(jiffies - start_time), state, sharer);
 
@@ -263,10 +266,11 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 		pr_pgfault("inv CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, current_shmem);
 		pr_info("after send_pfault_to_mn");
                 
-		send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
+		send_cache_dir_full_always_check(tsk2.tgid, current_shmem, &state, &sharer,
                                              &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
-                printk(KERN_WARNING "ERROR: Cannot receive ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
-                   smp_processor_id(), node->tgid, node->addr,
+                
+		printk(KERN_WARNING "ERROR: Cannot receive ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
+                   smp_processor_id(), tsk2.tgid, current_shmem,
                    atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
                    jiffies_to_msecs(jiffies - start_time), state, sharer);
 
@@ -302,11 +306,11 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 				temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(cpu_id));
                                 
 		pr_info("after cn_copy_page_data_to_mn");
-		send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
+		send_cache_dir_full_always_check(tsk2.tgid, current_shmem, &state, &sharer,
                                              &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
                 
 		printk(KERN_WARNING "ERROR: Cannot receive ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
-                   smp_processor_id(), node->tgid, node->addr,
+                   smp_processor_id(), tsk2.tgid, current_shmem,
                    atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
                    jiffies_to_msecs(jiffies - start_time), state, sharer);
 		
@@ -315,11 +319,11 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 
 		pr_info("after cnthread_send_finish_ack");
 
-                send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
+                send_cache_dir_full_always_check(tsk2.tgid, current_shmem, &state, &sharer,
                                              &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
 
                 printk(KERN_WARNING "ERROR: Cannot receive ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
-                   smp_processor_id(), node->tgid, node->addr,
+                   smp_processor_id(), tsk2.tgid, current_shmem,
                    atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
                    jiffies_to_msecs(jiffies - start_time), state, sharer);
 
@@ -696,6 +700,9 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		//todo this wasn't done
 		tsk2.tgid = DISAGG_KERN_TGID;
 
+		struct task_struct tsk3;
+		tsk3.tgid = DISAGG_KERN_TGID;
+
 		int conn_id = smp_processor_id();
 		
 		unsigned long current_shmem = (shmem_address[inode_number] + (PAGE_SIZE * (page_number)));
@@ -711,11 +718,11 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		pr_info("node tgid %d", node->tgid);	
 		pr_info("node addr %d", node->addr);	
 
-		send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
+		send_cache_dir_full_always_check(tsk3.tgid, current_shmem, &state, &sharer,
                                              &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
                 
 		printk(KERN_WARNING " READ PATH BEFORE PFAULT ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
-                   smp_processor_id(), node->tgid, node->addr,
+                   smp_processor_id(), tsk3.tgid, current_shmem,
                    atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
                    jiffies_to_msecs(jiffies - start_time), state, sharer);
 			
@@ -741,11 +748,11 @@ static int simplefs_readpage(struct file *file, struct page *page)
 
 
 		pr_info("after send_pfault_to_mn");
-		send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
+		send_cache_dir_full_always_check(tsk3.tgid, current_shmem, &state, &sharer,
                                              &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
                 
 		printk(KERN_WARNING " READ PATH AFTER PFAULT ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
-                   smp_processor_id(), node->tgid, node->addr,
+                   smp_processor_id(), tsk3.tgid, current_shmem,
                    atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
                    jiffies_to_msecs(jiffies - start_time), state, sharer);
 		
@@ -758,15 +765,15 @@ static int simplefs_readpage(struct file *file, struct page *page)
 
 
 		pr_info("read path after page write");
-		send_cache_dir_full_always_check(node->tgid, node->addr & PAGE_MASK, &state, &sharer,
+		send_cache_dir_full_always_check(tsk3.tgid, current_shmem, &state, &sharer,
                                              &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
                 
 		printk(KERN_WARNING " READ PATH AFTER PAGEWRITE ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
-                   smp_processor_id(), node->tgid, node->addr,
+                   smp_processor_id(), tsk3.tgid, current_shmem,
                    atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
                    jiffies_to_msecs(jiffies - start_time), state, sharer);
 		
-
+               pr_info("dir_size %d", dir_size);
 
 
 
