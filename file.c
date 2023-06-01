@@ -315,7 +315,7 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
                    jiffies_to_msecs(jiffies - start_time), state, sharer);
 		
 		static struct cnthread_inv_msg_ctx send_ctx;
-		cnthread_send_finish_ack(tsk3.tgid, current_shmem, &send_ctx, 1);
+		cnthread_send_finish_ack(tsk3.tgid, current_shmem, &send_ctx, 0);
 
 		pr_info("after cnthread_send_finish_ack");
 
