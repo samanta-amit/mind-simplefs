@@ -194,7 +194,7 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 		int page_number = pagep->index;
 		int inode_number = inode->i_ino;
 		pr_info("******writing page number %d inode number %d", page_number, inode_number);
-
+		pr_info("page pointer is: %d", pagep);
 		struct fault_reply_struct reply;
 		struct fault_reply_struct ret_buf;
 		struct cache_waiting_node *wait_node = NULL;
@@ -209,7 +209,7 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 
 		struct cnthread_page *new_cnpage = NULL;
 		int wait_err = -1;
-		int cpu_id = get_cpu();
+		int cpu_id = 4; //get_cpu();
 		pr_info("inv page up to date %d", cpu_id);
 		wait_node = NULL;
 
@@ -290,6 +290,8 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 
 		spinlock_t *ptl_ptr = NULL;	
 		pte_t *temppte = ensure_pte(mm, (void*)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
+		pr_info("dummy buffer address: %d", (void*)get_dummy_page_buf_addr(cpu_id));
+
 
 		//writes data to that page
 		//copy data into dummy buffer, and send to switch
@@ -623,6 +625,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
     int page_number = page->index;
     int inode_number = inode->i_ino;
     pr_info("******reading page number %d inode number %d", page_number, inode_number);
+    pr_info("page pointer is %d", page);
     performcoherence(inode, page_number, mapping, 2);
     int result = 0;
     int i;
@@ -675,7 +678,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 
                 struct cnthread_page *new_cnpage = NULL;
                 int wait_err = -1;
-		int cpu_id = get_cpu();
+		int cpu_id = 4; //get_cpu();
 		pr_info("page up to date %d", cpu_id);
 		wait_node = NULL;
 
@@ -762,7 +765,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		//but since we are copying the entire page we should just start at zero
 		//TODO commented out for now
 		simplefs_kernel_page_write(page, get_dummy_page_buf_addr(cpu_id), ret_buf.data_size, &test);
-
+		pr_info("readpath dummy buffer address: %d", (void*)get_dummy_page_buf_addr(cpu_id));
 
 		pr_info("read path after page write");
 		send_cache_dir_full_always_check(tsk3.tgid, current_shmem, &state, &sharer,
