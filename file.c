@@ -114,41 +114,6 @@ static struct inode_item * pageinhashmap(unsigned long i_ino, int pagenum) {
 }
 
 
-//this performs a write on the given page, using the given buffer
-//this bypasses the normal write operations and does the minimal
-//amount of setup needed in order to call copy_page_from_iter
-ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t count, loff_t *pos)
-{
-	mm_segment_t old_fs;
-        ssize_t result;
-
-	//from kernel_read in fs/read_write.c
-        old_fs = get_fs();
-        set_fs(get_ds());
-        /* The cast to a user pointer is valid due to the set_fs() */
-        //result = simplefs_vfs_read(file, (void __user *)buf, count, pos);
-
-
-	//TODO compute the offset, compute the index
-	//TODO I think this should work, but I should 
-	unsigned int index = *pos >> PAGE_SHIFT;
-	unsigned int offset = *pos & ~PAGE_MASK;	
-
-	//create the iov_iter (from new_sync_read)
-	struct iov_iter iter;
-	struct iovec iov = {.iov_base = buf, .iov_len = count}; //from new_sync_read
-	iov_iter_init(&iter, READ, &iov, 1, count); //also from new_sync_read
-
-	result = copy_page_from_iter(testpage, 0, count, &iter);
-	pr_info("kernel page write result was %d\n", result);
-	pr_info("kernel page write count was %d\n", count);
-
-	set_fs(old_fs);
-        return result;
-
-
-}
-
 
 //this performs a read on the given page, read into the given buffer
 //this bypasses the normal read operations and does the minimal
@@ -183,6 +148,50 @@ ssize_t simplefs_kernel_page_read(struct page * testpage, void * buf, size_t cou
 }
 
 
+
+//this performs a write on the given page, using the given buffer
+//this bypasses the normal write operations and does the minimal
+//amount of setup needed in order to call copy_page_from_iter
+ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t count, loff_t *pos)
+{
+	mm_segment_t old_fs;
+        ssize_t result;
+	int j;
+	//from kernel_read in fs/read_write.c
+        old_fs = get_fs();
+        set_fs(get_ds());
+        /* The cast to a user pointer is valid due to the set_fs() */
+        //result = simplefs_vfs_read(file, (void __user *)buf, count, pos);
+
+
+	//TODO compute the offset, compute the index
+	//TODO I think this should work, but I should 
+	unsigned int index = *pos >> PAGE_SHIFT;
+	unsigned int offset = *pos & ~PAGE_MASK;	
+
+	//create the iov_iter (from new_sync_read)
+	struct iov_iter iter;
+	struct iovec iov = {.iov_base = buf, .iov_len = count}; //from new_sync_read
+	iov_iter_init(&iter, READ, &iov, 1, count); //also from new_sync_read
+
+	result = copy_page_from_iter(testpage, 0, count, &iter);
+	pr_info("kernel page write result was %d\n", result);
+	pr_info("kernel page write count was %d\n", count);
+
+	set_fs(old_fs);
+	loff_t test = 0;
+	void * testbuffer = kmalloc(sizeof(100), GFP_KERNEL);
+	simplefs_kernel_page_read(testpage, testbuffer, 100, &test);
+	char * temp2 = testbuffer;
+
+	for(j = 0; j < 100; j++){
+		pr_info("page write check %c", temp2[j]);
+	}
+
+        return result;
+
+
+}
 
 
 
