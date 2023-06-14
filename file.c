@@ -122,6 +122,7 @@ ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t co
 	mm_segment_t old_fs;
         ssize_t result;
 
+	//from kernel_read in fs/read_write.c
         old_fs = get_fs();
         set_fs(get_ds());
         /* The cast to a user pointer is valid due to the set_fs() */
@@ -133,13 +134,14 @@ ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t co
 	unsigned int index = *pos >> PAGE_SHIFT;
 	unsigned int offset = *pos & ~PAGE_MASK;	
 
-	//create the iov_iter
+	//create the iov_iter (from new_sync_read)
 	struct iov_iter iter;
-	struct iovec iov = {.iov_base = buf, .iov_len = count};
-	iov_iter_init(&iter, READ, &iov, 1, count);
+	struct iovec iov = {.iov_base = buf, .iov_len = count}; //from new_sync_read
+	iov_iter_init(&iter, READ, &iov, 1, count); //also from new_sync_read
 
-	copy_page_from_iter(testpage, 0, count, &iter);
-
+	result = copy_page_from_iter(testpage, 0, count, &iter);
+	pr_info("kernel page write result was %d\n", result);
+	pr_info("kernel page write count was %d\n", count);
 
 	set_fs(old_fs);
         return result;
