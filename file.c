@@ -290,7 +290,10 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 
 		spinlock_t *ptl_ptr = NULL;	
 		pte_t *temppte = ensure_pte(mm, (void*)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
-		pr_info("dummy buffer address: %d", (void*)get_dummy_page_buf_addr(cpu_id));
+		pr_info("write path dummy buffer address: %d", (void*)get_dummy_page_buf_addr(cpu_id));
+		void *ptrdummy = get_dummy_page_buf_addr(cpu_id);
+		pr_info("Ox%llx\n", *(u64*)ptrdummy);
+
 
 
 		//writes data to that page
@@ -766,6 +769,8 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		//TODO commented out for now
 		simplefs_kernel_page_write(page, get_dummy_page_buf_addr(cpu_id), ret_buf.data_size, &test);
 		pr_info("readpath dummy buffer address: %d", (void*)get_dummy_page_buf_addr(cpu_id));
+		void *ptrdummy = get_dummy_page_buf_addr(cpu_id);
+		pr_info("Ox%llx\n", *(u64*)ptrdummy);
 
 		pr_info("read path after page write");
 		send_cache_dir_full_always_check(tsk3.tgid, current_shmem, &state, &sharer,
