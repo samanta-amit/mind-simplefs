@@ -770,9 +770,10 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		loff_t test = 0;//this is the offset into the page that we start making the change
 		//but since we are copying the entire page we should just start at zero
 		//TODO commented out for now
-		simplefs_kernel_page_write(page, get_dummy_page_buf_addr(cpu_id), ret_buf.data_size, &test);
 		pr_info("readpath dummy buffer address: %d", (void*)get_dummy_page_buf_addr(cpu_id));
 		void *ptrdummy = get_dummy_page_buf_addr(cpu_id);
+		pr_info("Ox%llx\n", *(u64*)ptrdummy);
+		simplefs_kernel_page_write(page, get_dummy_page_buf_addr(cpu_id), ret_buf.data_size, &test);
 		pr_info("Ox%llx\n", *(u64*)ptrdummy);
 
 		pr_info("read path after page write");
