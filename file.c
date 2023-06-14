@@ -301,7 +301,6 @@ static bool invalidate_page_write(struct inode * inode, struct page * pagep){
 		simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), PAGE_SIZE, &test);
 		//sprintf((void*)get_dummy_page_buf_addr(cpu_id), "yay it worked! testing write from 135______ this is working got from 135 ");
 
-		void *ptrdummy = get_dummy_page_buf_addr(cpu_id);
 		pr_info("Ox%llx\n", *(u64*)ptrdummy);
 
 
