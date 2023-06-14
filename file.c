@@ -162,7 +162,16 @@ ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t co
         set_fs(get_ds());
         /* The cast to a user pointer is valid due to the set_fs() */
         //result = simplefs_vfs_read(file, (void __user *)buf, count, pos);
+	void * tempbuffer = kmalloc(sizeof(count), GFP_KERNEL); //TODO free this
 
+	//copy buffer into temporary buffer (while verifying that the data being
+	//read from the original buffer is correct
+	for(j = 0; j < count; j++){
+		((char*)(tempbuffer))[j] = ((char*)buf)[j];
+		if(j < 50){
+			pr_info("temp buffer %c\n", ((char*)buf)[j]);
+		}
+	}
 
 	//TODO compute the offset, compute the index
 	//TODO I think this should work, but I should 
@@ -171,19 +180,24 @@ ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t co
 
 	//create the iov_iter (from new_sync_read)
 	struct iov_iter iter;
-	struct iovec iov = {.iov_base = buf, .iov_len = count}; //from new_sync_read
+	struct iovec iov = {.iov_base = tempbuffer, .iov_len = count}; //from new_sync_read
 	iov_iter_init(&iter, READ, &iov, 1, count); //also from new_sync_read
 
+
+	//actually copy the data to the page
 	result = copy_page_from_iter(testpage, 0, count, &iter);
 	pr_info("kernel page write result was %d\n", result);
 	pr_info("kernel page write count was %d\n", count);
 
+	kfree(tempbuffer); //free the temp buffer
 	set_fs(old_fs);
+
+
+	//tries to read from the page to verify that the write when through
 	loff_t test = 0;
 	void * testbuffer = kmalloc(sizeof(100), GFP_KERNEL);
 	simplefs_kernel_page_read(testpage, testbuffer, 100, &test);
 	char * temp2 = testbuffer;
-
 	for(j = 0; j < 100; j++){
 		pr_info("page write check %c", temp2[j]);
 	}
