@@ -650,7 +650,7 @@ static void mind_pr_cache_dir_state(const char* msg,
  * Caller must ensure that page_dma_address is the DMA address of a page-sized
  * buffer that this function can use without outside concurrent access.
  */
-static int mind_fetch_page(struct page *page,
+static int mind_fetch_page(
 	uintptr_t shmem_address, void *page_dma_address, size_t *data_size)
 {
 	struct fault_reply_struct ret_buf;
@@ -661,9 +661,8 @@ static int mind_fetch_page(struct page *page,
 	ret_buf.data_size = PAGE_SIZE;
 	ret_buf.data = page_dma_address;
 
-	pr_info("mind_fetch_page(page = %p, shmem_address = 0x%lx, "
-		"page_dma_address = %p)",
-			page, shmem_address, page_dma_address);
+	pr_info("mind_fetch_page(shmem_address = 0x%lx, "
+		"page_dma_address = %p)", shmem_address, page_dma_address);
 
 	wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
 	BUG_ON(!wait_node);
@@ -744,7 +743,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	// spinlock.
 	size_t data_size;
 	void *buf = get_dummy_page_dma_addr(get_cpu());
-	r = mind_fetch_page(page, inode_pages_address, buf, &data_size);
+	r = mind_fetch_page(inode_pages_address, buf, &data_size);
 	BUG_ON(r);
 
 	simplefs_kernel_page_write(page, buf, data_size, 0);
