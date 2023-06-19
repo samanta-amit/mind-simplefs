@@ -114,7 +114,6 @@ static struct page_coherence_state * pageinhashmap(unsigned long i_ino, int page
 ssize_t simplefs_kernel_page_read(struct page * testpage, void * buf, size_t count, loff_t *pos)
 {
 	mm_segment_t old_fs;
-        ssize_t result;
 	unsigned int index, offset;
 	struct iov_iter iter;
 	struct iovec iov = {.iov_base = buf, .iov_len = count};
@@ -136,7 +135,7 @@ ssize_t simplefs_kernel_page_read(struct page * testpage, void * buf, size_t cou
 	copy_page_to_iter(testpage, 0, count, &iter);
 
 	set_fs(old_fs);
-        return result;
+        return 0;
 
 
 }
@@ -625,14 +624,19 @@ do {
 	} while (page_bh != head);
 }
 
-static void pr_info_wait_node(const char *msg, unsigned long start_time,
-		uintptr_t shmem_address, struct cache_waiting_node *wait_node,
-		u16 state, u16 sharer)
+
+static void mind_pr_cache_dir_state(const char* msg,
+	unsigned long start_time, uintptr_t shmem_address,
+	unsigned long ack_counter, unsigned long target_counter)
 {
-	pr_info("%s - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
+	u16 state, sharer, dir_size, dir_lock, inv_cnt;
+	send_cache_dir_full_always_check(
+		DISAGG_KERN_TGID, shmem_address, &state, &sharer,
+		&dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
+	pr_info("%s - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %ld, tar_cnt: %ld, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
 		msg,
 		smp_processor_id(), DISAGG_KERN_TGID, shmem_address,
-		atomic_read(&wait_node->ack_counter), atomic_read(&wait_node->target_counter),
+		ack_counter, target_counter,
 		jiffies_to_msecs(jiffies - start_time), state, sharer);
 }
 
@@ -652,8 +656,6 @@ static int mind_fetch_page(struct page *page,
 	struct fault_reply_struct ret_buf;
 	struct cache_waiting_node *wait_node = NULL;
 	int r;
-	u16 state = 0, sharer = 0;
-	u16 dir_size, dir_lock, inv_cnt;
 	unsigned long start_time = jiffies;
 
 	ret_buf.data_size = PAGE_SIZE;
@@ -666,21 +668,16 @@ static int mind_fetch_page(struct page *page,
 	wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
 	BUG_ON(!wait_node);
 
-	// TODO(stutsman): Why is this code done three times, and why is it done
-	// twice in a row below?
-	// TODO(stutsman): What does this line do *exactly*? What ever it is
-	// we should document it clearly and move it out into a helper function
-	// so that it is easier to use and more clearly documented/explained.
-	send_cache_dir_full_always_check(DISAGG_KERN_TGID, shmem_address, &state, &sharer,
-					&dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
-	pr_info_wait_node("READ PATH BEFORE PFAULT ACK/NACK",
-		start_time, shmem_address, wait_node, state, sharer);
+	mind_pr_cache_dir_state(
+		"READ PATH BEFORFE PFAULT ACK/NACK",
+		start_time, shmem_address,
+		atomic_read(&wait_node->ack_counter),
+		atomic_read(&wait_node->target_counter));
 
 	BUG_ON(!is_kshmem_address(shmem_address));
 	// NULL struct task_struct* is okay here because
 	// if is_kshmem_address(shmem_address) then task_struct is never
 	// derefenced.
-	pr_info("sending pfault to mn");
 	r = send_pfault_to_mn(NULL, 0, shmem_address, 0, &ret_buf);
 	pr_info("sending pfault to mn done");
 	wait_node->ack_buf = ret_buf.ack_buf;
@@ -690,24 +687,11 @@ static int mind_fetch_page(struct page *page,
 		cancel_waiting_for_nack(wait_node);
 	r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
-	pr_info("wait_ack_from_ctrl done");
-	send_cache_dir_full_always_check(DISAGG_KERN_TGID, shmem_address, &state, &sharer,
-					&dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
-
-	pr_info_wait_node("READ PATH AFTER PFAULT ACK/NACK",
-		start_time, shmem_address, wait_node, state, sharer);
-
-	// TODO(stutsman): Once we sort out why we call send_cache... three
-	// times in this function, we should move this function out to the
-	// caller so we can generalize this function to know nothing about
-	// struct page*.
-	simplefs_kernel_page_write(page, page_dma_address, ret_buf.data_size, 0);
-
-	send_cache_dir_full_always_check(DISAGG_KERN_TGID, shmem_address, &state, &sharer,
-					&dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
-
-	pr_info_wait_node("READ PATH AFTER PAGEWRITE ACK/NACK",
-		start_time, shmem_address, wait_node, state, sharer);
+	mind_pr_cache_dir_state(
+		"READ PATH AFTER PFAULT ACK/NACK",
+		start_time, shmem_address,
+		atomic_read(&wait_node->ack_counter),
+		atomic_read(&wait_node->target_counter));
 
 	*data_size = ret_buf.data_size;
 	return 0;
@@ -732,7 +716,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 
 	const struct address_space *mapping = file->f_mapping;
 
-	pr_info("readpage ino %d page %d", mapping->host->i_ino, page->index);
+	pr_info("readpage ino %ld page %ld", mapping->host->i_ino, page->index);
 
 	// Set up this ino/page offset in page_states if needed.
 	performcoherence(mapping->host, page->index, mapping, 2);
@@ -799,10 +783,7 @@ static int simplefs_write_begin(struct file *file,
 
 	    unsigned int currentpage = pos / PAGE_SIZE;
 	    unsigned int lastpage = (pos + len) / PAGE_SIZE;
-    pr_info("write begin page number %d end page number %d, for inode %d write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
-    pr_info("write begin page number %d end page number %d, for inode %d write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
-    pr_info("write begin page number %d end page number %d, for inode %d write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
-    pr_info("write begin page number %d end page number %d, for inode %d write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d end page number %d, for inode %ld write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
 
 
     struct inode *inode = file->f_inode;
