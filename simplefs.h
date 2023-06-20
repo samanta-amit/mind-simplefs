@@ -1,6 +1,11 @@
 #ifndef SIMPLEFS_H
 #define SIMPLEFS_H
 
+#ifdef pr_fmt
+#undef pr_fmt
+#endif
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 /* source: https://en.wikipedia.org/wiki/Hexspeak */
 #define SIMPLEFS_MAGIC 0xDEADCELL
 
