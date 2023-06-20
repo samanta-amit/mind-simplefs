@@ -692,7 +692,7 @@ static int mind_fetch_page(
 		atomic_read(&wait_node->ack_counter),
 		atomic_read(&wait_node->target_counter));
 
-	*data_size = ret_buf.data_size;
+	data_size = ret_buf.data_size;
 	return 0;
 }
 
