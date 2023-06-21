@@ -721,7 +721,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	r = mind_fetch_page(inode_pages_address, buf, &data_size);
 	BUG_ON(r);
 	
-	simplefs_kernel_page_write(page, get_dummy_page_buf_addr(get_cpu()), data_size, 0);
+	simplefs_kernel_page_write(page, get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, 0);
 	pr_info("read path after page write");
 
 	spin_unlock(&dummy_page_lock);
