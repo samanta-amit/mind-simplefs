@@ -208,8 +208,6 @@ ssize_t simplefs_kernel_page_read(struct page * testpage, void * buf, size_t cou
 
 	set_fs(old_fs);
         return 0;
-
-
 }
 
 
@@ -249,8 +247,6 @@ ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t co
 	set_fs(old_fs);
 
         return result;
-
-
 }
 
 static bool invalidate_page_write(struct file *file, struct inode * inode, struct page * pagep){
@@ -276,9 +272,7 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
         void *buf = get_dummy_page_dma_addr(get_cpu());
         r = mind_fetch_page(inode_pages_address, buf, &data_size);
         BUG_ON(r);
-        pr_info("strating writing ");  
 
-        //ptl_ptr = NULL;
         temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
 
         ptrdummy = get_dummy_page_buf_addr(get_cpu());
@@ -296,26 +290,10 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
 
         cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
         temppte, CN_OTHER_PAGE, 0, buf);
-                
-        /*mind_pr_cache_dir_state(
-        "WRITE PATH AFTER COPY PAGE DATA TO MN ACK/NACK",
-                start_time, shmem_address,
-                atomic_read(&wait_node->ack_counter),
-                atomic_read(&wait_node->target_counter));
-        */
         
         cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
-	
-	/*mind_pr_cache_dir_state(
-	"WRITE PATH AFTER CNTHREAD SEND FINISH ACK/NACK",
-	start_time, shmem_address,
-		atomic_read(&wait_node->ack_counter),
-		atomic_read(&wait_node->target_counter));
-	*/
-
 
 	spin_unlock(ptl_ptr);
-
 	spin_unlock(&dummy_page_lock);
 
 	//spin_unlock_irq(&mapping->tree_lock);
@@ -347,7 +325,7 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer, 
 			struct page * testp = pagep;
 			pr_info("testing 0x%lx", testp->flags);
 			pr_info("testing2 %p", testbuffer);
-                        
+
 			ClearPageUptodate(testp);
 			//mapping->nrpages--; TODO figure out if we need this
 
@@ -471,7 +449,6 @@ static void performcoherence(struct inode * inode, int page, struct address_spac
 } 
 
 /*
- *
  * STOLEN FROM MPAGE.C
  * support function for mpage_readpages.  The fs supplied get_block might
  * return an up to date buffer.  This is used to map that buffer into
@@ -514,8 +491,6 @@ do {
 		block++;
 	} while (page_bh != head);
 }
-
-
 
 
 /*
@@ -577,6 +552,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	return 0;
 }
 
+
 /*
  * Called by the page cache to write a dirty page to the physical disk (when
  * sync is called or when memory is needed).
@@ -585,6 +561,7 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 {
     return block_write_full_page(page, simplefs_file_get_block, wbc);
 }
+
 
 /*
  * Called by the VFS when a write() syscall occurs on file before writing the
@@ -640,6 +617,7 @@ static int simplefs_write_begin(struct file *file,
         pr_err("newly allocated blocks reclaim not implemented yet\n");
     return err;
 }
+
 
 /*
  * Called by the VFS after writing data from a write() syscall to the page
@@ -721,6 +699,7 @@ end:
 
 }
 
+
 static ssize_t del_simplefs_sync_read(struct file *filp, char __user *buf, size_t len, loff_t *ppos)
 {
         struct iovec iov = { .iov_base = buf, .iov_len = len };
@@ -737,6 +716,7 @@ static ssize_t del_simplefs_sync_read(struct file *filp, char __user *buf, size_
         *ppos = kiocb.ki_pos;
         return ret;
 }
+
 
 //del prefix just stating that this isn't needed anymore
 ssize_t del_simplefs_vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
@@ -765,6 +745,7 @@ ssize_t del_simplefs_vfs_read(struct file *file, char __user *buf, size_t count,
 
         return ret;
 }
+
 
 //unused modified version of kernel read
 ssize_t simplefs_kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
@@ -801,9 +782,8 @@ ssize_t simplefs_kernel_read(struct file *file, void *buf, size_t count, loff_t 
 
 	set_fs(old_fs);
         return 0;
-
-
 }
+
 
 /**
  * generic_file_buffered_read - generic file read routine
@@ -1060,8 +1040,6 @@ out:
 }
 
 
-
-
 ssize_t
 simplefs_generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 {
@@ -1119,7 +1097,6 @@ out:
 }
 
 
-
 ssize_t
 simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 {
@@ -1154,7 +1131,7 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	unsigned int last_index = (*ppos + iter->count + PAGE_SIZE-1) >> PAGE_SHIFT; 
 	unsigned int offset = *ppos & ~PAGE_MASK;	
 	unsigned int count_test = iter->count;
-//	pr_info("**********index is %d last index is %d offset is %d count is %d", index, last_index, offset, count_test);
+	//pr_info("**********index is %d last index is %d offset is %d count is %d", index, last_index, offset, count_test);
 
 
 	pr_info("*****beginning read inode %d page %d", inode->i_ino, index);
@@ -1239,19 +1216,14 @@ ssize_t simplefs_file_write_iter(struct kiocb *iocb, struct iov_iter *from) {
 	//char * base = ((readiter->iov)->iov_base);
 	//char * base = ((&iter)->iov)->iov_base;
 
-
-
 	//TODO for some reason this had to be after the write
 	//probably because we don't do null checks
 	//this isn't a great place for this though
-
-
 
 	if (ret > 0)
 		ret = generic_write_sync(iocb, ret);
 
 	return ret;
-
 
 }
 
