@@ -152,7 +152,7 @@ static int mind_fetch_page(
 	BUG_ON(!wait_node);
 
 	mind_pr_cache_dir_state(
-		"READ PATH BEFORFE PFAULT ACK/NACK",
+		"BEFORFE PFAULT ACK/NACK",
 		start_time, shmem_address,
 		atomic_read(&wait_node->ack_counter),
 		atomic_read(&wait_node->target_counter));
@@ -171,7 +171,7 @@ static int mind_fetch_page(
 	r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
 	mind_pr_cache_dir_state(
-		"READ PATH AFTER PFAULT ACK/NACK",
+		"AFTER PFAULT ACK/NACK",
 		start_time, shmem_address,
 		atomic_read(&wait_node->ack_counter),
 		atomic_read(&wait_node->target_counter));
@@ -337,6 +337,7 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
         void *buf = get_dummy_page_dma_addr(get_cpu());
         r = mind_fetch_page(inode_pages_address, buf, &data_size);
         BUG_ON(r);
+         pr_info("strating writing ");  
 
 
 
@@ -367,14 +368,14 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
         wait_err = wait_ack_from_ctrl(wait_node, NULL, NULL, new_cnpage);*/
 
 
-        mm = get_init_mm();
+        //mm = get_init_mm();
 
 
         ptl_ptr = NULL;
         temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
-        //pr_info("write path dummy buffer address: %p", (void*)get_dummy_page_buf_addr(cpu_id));
+        pr_info("write path dummy buffer address: %p", (void*)get_dummy_page_buf_addr(get_cpu()));
         ptrdummy = get_dummy_page_buf_addr(get_cpu());
-        //pr_info("Ox%llx\n", *(u64*)ptrdummy);
+        pr_info("Ox%llx\n", *(u64*)ptrdummy);
 
 
 
@@ -398,31 +399,34 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
 
 
         //evict
+        unsigned long start_time = jiffies;
+        struct cache_waiting_node *wait_node = NULL;
+        wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
+
         spin_lock(ptl_ptr);
 
 
-        cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, shmem_address,
         temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(get_cpu()));
-        //pr_info("after cn_copy_page_data_to_mn");
-
-
-        /*
+        
+        pr_info("after cn_copy_page_data_to_mn");
+        
         mind_pr_cache_dir_state(
         "WRITE PATH AFTER COPY PAGE DATA TO MN ACK/NACK",
                 start_time, shmem_address,
                 atomic_read(&wait_node->ack_counter),
                 atomic_read(&wait_node->target_counter));
-        */
-        cnthread_send_finish_ack(NULL, inode_pages_address, &send_ctx, 0);
+        
+        cnthread_send_finish_ack(NULL, shmem_address, &send_ctx, 0);
 
-
-	/*
+        pr_info("after cnthread_send_finish_ack");
+	
 	mind_pr_cache_dir_state(
 	"WRITE PATH AFTER CNTHREAD SEND FINISH ACK ACK/NACK",
 	start_time, shmem_address,
 		atomic_read(&wait_node->ack_counter),
 		atomic_read(&wait_node->target_counter));
-	*/
+	
 
 
 	spin_unlock(ptl_ptr);
