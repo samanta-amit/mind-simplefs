@@ -212,6 +212,7 @@ ssize_t simplefs_kernel_page_read(struct page * testpage, void * buf, size_t cou
 
 }
 
+
 //this performs a write on the given page, using the given buffer
 //this bypasses the normal write operations and does the minimal
 //amount of setup needed in order to call copy_page_from_iter
@@ -253,195 +254,74 @@ ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t co
 }
 
 static bool invalidate_page_write(struct file *file, struct inode * inode, struct page * pagep){
-        //void *pagep;
-        /*struct fault_reply_struct ret_buf;
-        struct cache_waiting_node *wait_node = NULL;
-        struct task_struct tsk3;
-        struct task_struct tsk2;
-        struct cnthread_page *new_cnpage = NULL;
-        struct fault_msg_struct payload;
-        loff_t test = 20;
-        struct page * testp = pagep;
-        //pr_info("testing %d", testp->flags);
-        int page_number = pagep->index;
-        int inode_number = inode->i_ino;
-        struct cache_waiting_node *node = NULL;
-        u16 state = 0, sharer = 0;
-        u16 dir_size, dir_lock, inv_cnt;
-        unsigned long start_time;
-        int fault;
-        int wait_err = -1;
-        int cpu_id = 4; //get_cpu();
-        unsigned long address = 0;
-        unsigned long error_code = 0;
-        unsigned long current_shmem = (shmem_address[inode_number] + (PAGE_SIZE * (page_number)));
-        */
-
 
         struct page * testp = pagep;
         uintptr_t inode_pages_address;
         int r;
         struct mm_struct *mm;
+        mm = get_init_mm();
         spinlock_t *ptl_ptr = NULL;
         pte_t *temppte;
         void *ptrdummy;
-        //unsigned long start_time = jiffies;
         static struct cnthread_inv_msg_ctx send_ctx;
-
+        loff_t test = 20; 
 
         const struct address_space *mapping = file->f_mapping;
 
-
-
-
         inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (pagep->index));
 
-
-
-
-        /*struct mm_struct *mm;
-        spinlock_t *ptl_ptr = NULL;
-        pte_t *temppte;
-        void *ptrdummy;
-        static struct cnthread_inv_msg_ctx send_ctx;
-        pr_info("******writing page number %d inode number %d", page_number, inode_number);
-        pr_info("page pointer is: %p", pagep);
-        pr_info("inv tgid");
-        //todo this wasn't done
-        tsk3.tgid = DISAGG_KERN_TGID;
-        pr_info("inv after tgid");
-        tsk2.tgid = DISAGG_KERN_TGID;
-
-
-                pr_info("inv page up to date %d", cpu_id);
-        wait_node = NULL;
-
-
-        //TODO this were not initialized, why?
-        payload.address = address;
-        payload.error_code = error_code;*/
-
-
         spin_lock(&dummy_page_lock);
-        /*pr_info("inbetween locks");
-        ret_buf.data_size = PAGE_SIZE;
-        ret_buf.data = (void*)get_dummy_page_dma_addr(cpu_id);
-        pr_info("inv ret_buf address %p", ret_buf.data);
-
-
-
-
-        start_time = jiffies;
-        node = add_waiting_node(DISAGG_KERN_TGID, current_shmem, NULL );/* Unused by callee */
+       
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(get_cpu());
         r = mind_fetch_page(inode_pages_address, buf, &data_size);
         BUG_ON(r);
-         pr_info("strating writing ");  
+        pr_info("strating writing ");  
 
-
-
-
-
-
-        //int is_kern_shared_mem = 1;
-        //wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk3.tgid, current_shmem, new_cnpage);
-        /*wait_node = node;
-        fault = send_pfault_to_mn(&tsk3, error_code, current_shmem, 0, &ret_buf);
-        pr_info("inv write after pagefault fault is %d", fault);
-        pr_pgfault("inv CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, current_shmem);
-        pr_info("after send_pfault_to_mn");
-        mind_pr_cache_dir_state(
-        "WRITE PATH AFTER PFAULT ACK/NACK",
-        start_time, shmem_address,
-        atomic_read(&wait_node->ack_counter),
-        atomic_read(&wait_node->target_counter));
-
-
-        wait_node->ack_buf = ret_buf.ack_buf;
-
-
-        if(fault <= 0)
-        {
-                cancel_waiting_for_nack(wait_node);
-        }
-        wait_err = wait_ack_from_ctrl(wait_node, NULL, NULL, new_cnpage);*/
-
-
-        //mm = get_init_mm();
-
-
-        ptl_ptr = NULL;
+        //ptl_ptr = NULL;
         temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
-        pr_info("write path dummy buffer address: %p", (void*)get_dummy_page_buf_addr(get_cpu()));
+
         ptrdummy = get_dummy_page_buf_addr(get_cpu());
-        pr_info("Ox%llx\n", *(u64*)ptrdummy);
-
-
-
-
-
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
-        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, 0);
-        //sprintf((void*)get_dummy_page_buf_addr(cpu_id), "yay it worked! testing write from 135______ this is working got from 135 ");
-
-
-        //pr_info("Ox%llx\n", *(u64*)ptrdummy);
-
-
-
+        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
 
         /*for(i = 0; i < 20; i++){
                 pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(cpu_id))[i]);
         }*/
 
 
-        //evict
-        unsigned long start_time = jiffies;
-        struct cache_waiting_node *wait_node = NULL;
-        wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
-
         spin_lock(ptl_ptr);
 
-
-        cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, shmem_address,
-        temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(get_cpu()));
-        
-        pr_info("after cn_copy_page_data_to_mn");
-        
-        mind_pr_cache_dir_state(
+        cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        temppte, CN_OTHER_PAGE, 0, buf);
+                
+        /*mind_pr_cache_dir_state(
         "WRITE PATH AFTER COPY PAGE DATA TO MN ACK/NACK",
                 start_time, shmem_address,
                 atomic_read(&wait_node->ack_counter),
                 atomic_read(&wait_node->target_counter));
+        */
         
-        cnthread_send_finish_ack(NULL, shmem_address, &send_ctx, 0);
-
-        pr_info("after cnthread_send_finish_ack");
+        cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 	
-	mind_pr_cache_dir_state(
-	"WRITE PATH AFTER CNTHREAD SEND FINISH ACK ACK/NACK",
+	/*mind_pr_cache_dir_state(
+	"WRITE PATH AFTER CNTHREAD SEND FINISH ACK/NACK",
 	start_time, shmem_address,
 		atomic_read(&wait_node->ack_counter),
 		atomic_read(&wait_node->target_counter));
-	
+	*/
 
 
 	spin_unlock(ptl_ptr);
 
-
 	spin_unlock(&dummy_page_lock);
-
 
 	//spin_unlock_irq(&mapping->tree_lock);
 	return true;
-
-
-
-
 }
+
 
 //Caller has to have inode lock
 //before calling this this deletes the page from the page cache
@@ -467,73 +347,7 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer, 
 			struct page * testp = pagep;
 			pr_info("testing 0x%lx", testp->flags);
 			pr_info("testing2 %p", testbuffer);
-
-
-			/*
-			struct fault_reply_struct reply;
-			struct fault_reply_struct ret_buf;
-			struct cache_waiting_node *wait_node = NULL;
-			struct task_struct tsk;
-			pr_info("inv tgid");	
-			//todo this wasn't done
-			tsk.tgid = 3;
-			pr_info("inv after tgid");	
-
-			struct cnthread_page *new_cnpage = NULL;
-			int wait_err = -1;
-			int cpu_id = get_cpu();
-			pr_info("inv page up to date %d", cpu_id);
-			static spinlock_t dummy_page_lock;
-			wait_node = NULL;
-
-			//TODO this were not initialized, why?
-			unsigned long address = 0;
-			unsigned long error_code = 0;
-			struct fault_msg_struct payload;
-			payload.address = address;
-			payload.error_code = error_code;
-
-			spin_lock(&dummy_page_lock);
-
-			ret_buf.data_size = PAGE_SIZE;
-			ret_buf.data = (void*)get_dummy_page_dma_addr(cpu_id);
-			pr_info("inv ret_buf address %d", ret_buf.data);
-
-			int is_kern_shared_mem = 1;
-			wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk.tgid, sharedaddress & PAGE_MASK, new_cnpage);
-			pr_info("inv address %d", sharedaddress);
-			int fault = send_pfault_to_mn(&tsk, error_code, sharedaddress, 0, &ret_buf);
-
-			pr_pgfault("inv CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, sharedaddress);
-			wait_node->ack_buf = ret_buf.ack_buf;
-			pr_info("inv fault %d", fault);
-
-			if(fault <= 0)
-			{
-				cancel_waiting_for_nack(wait_node);
-			}
-
-			struct mm_struct *mm = get_init_mm(); 
-
-			spinlock_t *ptl_ptr = NULL;	
-			pte_t *temppte = ensure_pte(mm, (void*)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
-
-			//writes data to that page
-			//copy data into dummy buffer, and send to switch
-			simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), 100, &test);
-
-
-			//evict 
-			spin_lock(ptl_ptr);
-			cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, sharedaddress,
-					temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(cpu_id));
-			spin_unlock(ptl_ptr);
-
-			//TODO this should be after we clear the pages
-			spin_unlock(&dummy_page_lock);
-			*/
-
-			//radix_tree_delete(&mapping->page_tree, pagenum);
+                        
 			ClearPageUptodate(testp);
 			//mapping->nrpages--; TODO figure out if we need this
 
