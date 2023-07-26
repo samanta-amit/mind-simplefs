@@ -8,12 +8,34 @@
 #include "bitmap.h"
 #include "simplefs.h"
 
+//stolen from inode.c in the kernel
+#include <linux/export.h>
+#include <linux/fs.h>
+#include <linux/mm.h>
+#include <linux/backing-dev.h>
+#include <linux/hash.h>
+#include <linux/swap.h>
+#include <linux/security.h>
+#include <linux/cdev.h>
+#include <linux/bootmem.h>
+#include <linux/fsnotify.h>
+#include <linux/mount.h>
+#include <linux/posix_acl.h>
+#include <linux/prefetch.h>
+#include <linux/buffer_head.h> /* for inode_has_buffers */
+#include <linux/ratelimit.h>
+#include <linux/list_lru.h>
+#include <trace/events/writeback.h>
+
+
+
 static const struct inode_operations simplefs_inode_ops;
 static const struct inode_operations symlink_inode_ops;
 
 /* Get inode ino from disk */
-struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
+struct inode *old_simplefs_iget(struct super_block *sb, unsigned long ino)
 {
+   
     struct inode *inode = NULL;
     struct simplefs_inode *cinode = NULL;
     struct simplefs_inode_info *ci = NULL;
@@ -22,14 +44,14 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
     uint32_t inode_block = (ino / SIMPLEFS_INODES_PER_BLOCK) + 1;
     uint32_t inode_shift = ino % SIMPLEFS_INODES_PER_BLOCK;
     int ret;
-
+/*
     pr_info("getting inode");
     pr_info("getting inode");
     pr_info("getting inode");
     pr_info("getting inode");
     pr_info("getting inode");
     pr_info("getting inode");
-
+*/
     /* Fail if ino is out of range */
     if (ino >= sbi->nr_inodes)
         return ERR_PTR(-EINVAL);
@@ -96,6 +118,89 @@ failed:
     return ERR_PTR(ret);
 }
 
+
+//stolen from inode.c
+struct inode *test_iget_locked(struct super_block *sb, unsigned long ino)
+{
+       struct inode *inode;
+       //inode = alloc_inode(sb);
+       //t_inode[ino] = kmalloc(sizeof(struct inode), GFP_KERNEL);
+       inode = inode_list[ino];
+	//TODO get size here!
+
+
+       pr_err("testinode1 %d, inode1 state is %d", inode, inode->i_state);  
+       inode_init_once(inode); //does the first part of the setup  
+       inode_init_always(sb, inode); //does second part of the setup  
+
+       inode->i_ino = ino;
+       spin_lock(&inode->i_lock);
+       inode->i_state = I_NEW;
+       //hlist_add_head(&inode->i_hash, head);
+       spin_unlock(&inode->i_lock);
+
+
+       inode_sb_list_add(inode);
+
+
+       //taken from subcall in test_iget_locked
+       spin_lock(&inode->i_sb->s_inode_list_lock);
+       list_add(&inode->i_sb_list, &inode->i_sb->s_inodes);
+       spin_unlock(&inode->i_sb->s_inode_list_lock);
+       //spin_unlock(&inode_hash_lock);
+
+       return inode;
+}
+
+
+/* Get inode ino from disk */
+struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
+{
+       if(ino == 0 || ino > 10){
+               return old_simplefs_iget(sb, ino);
+       }
+       struct inode * inode = NULL;  
+       inode = test_iget_locked(sb, ino);
+
+
+
+       pr_err("FIRST CHECK inode i_mapping %d", inode->i_mapping);
+       inode->i_ino = ino;
+       inode->i_sb = sb;
+       inode->i_op = &simplefs_inode_ops;
+
+       //inode->i_mode = 33188;  
+       //i_uid_write(inode, le32_to_cpu(cinode->i_uid));
+       //i_gid_write(inode, le32_to_cpu(cinode->i_gid));
+       inode->i_size = 0;  
+       pr_err("inode size %d", inode->i_size);
+       inode->i_ctime.tv_sec = 0; //(time64_t) le32_to_cpu(cinode->i_ctime);
+       inode->i_ctime.tv_nsec = 0;
+       inode->i_atime.tv_sec = 0;//(time64_t) le32_to_cpu(cinode->i_atime);
+       inode->i_atime.tv_nsec = 0;
+       inode->i_mtime.tv_sec = 0; //(time64_t) le32_to_cpu(cinode->i_mtime);
+       inode->i_mtime.tv_nsec = 0;
+       inode->i_blocks = 0; //le32_to_cpu(cinode->i_blocks);
+       pr_err("inode blocks %d", inode->i_blocks);
+
+       inode->i_state = I_NEW;
+
+/*
+       spin_lock(&inode->i_lock);
+       spin_unlock(&inode->i_lock);
+   */
+
+       unlock_new_inode(inode);
+       return inode;
+
+}
+
+
+
+
+
+
+
 /*
  * Look for dentry in dir.
  * Fill dentry with NULL if not in dir, with the corresponding inode if found.
@@ -113,6 +218,7 @@ static struct dentry *simplefs_lookup(struct inode *dir,
     struct simplefs_dir_block *dblock = NULL;
     struct simplefs_file *f = NULL;
     int ei, bi, fi;
+    /*
     pr_info("looking up dentry");
     pr_info("looking up dentry");
     pr_info("looking up dentry");
@@ -120,6 +226,7 @@ static struct dentry *simplefs_lookup(struct inode *dir,
     pr_info("looking up dentry");
     pr_info("looking up dentry");
     pr_info("dentry name %s", dentry->d_name.name);
+	*/
 
     /* Check filename length */
     if (dentry->d_name.len > SIMPLEFS_FILENAME_LEN)
@@ -949,6 +1056,7 @@ static const struct inode_operations symlink_inode_ops = {
 //from the file system (partially stolen from nfs cause the 
 //static part
 static int simplefs_dentry_revalidate(struct dentry * test, unsigned int test2) {
+	/*
 	pr_info("****dentry revalidate");
 	pr_info("***dentry revalidate");
 	pr_info("**dentry revalidate");
@@ -958,7 +1066,7 @@ static int simplefs_dentry_revalidate(struct dentry * test, unsigned int test2) 
 	pr_info("**dentry revalidate");
 	pr_info("***dentry revalidate");
 	pr_info("****dentry revalidate");
-
+	*/
 	return 0;
 }
 

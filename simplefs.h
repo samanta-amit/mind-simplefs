@@ -1,11 +1,6 @@
 #ifndef SIMPLEFS_H
 #define SIMPLEFS_H
 
-#ifdef pr_fmt
-#undef pr_fmt
-#endif
-#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
 /* source: https://en.wikipedia.org/wiki/Hexspeak */
 #define SIMPLEFS_MAGIC 0xDEADCELL
 
@@ -131,6 +126,10 @@ extern const struct dentry_operations simplefs_dentry_ops;
 extern uint32_t simplefs_ext_search(struct simplefs_file_ei_block *index,
                                     uint32_t iblock);
 
+
+#define number_of_inodes 10
+extern struct inode * inode_list[number_of_inodes]; 
+
 /* Getters for superbock and inode */
 #define SIMPLEFS_SB(sb) (sb->s_fs_info)
 #define SIMPLEFS_INODE(inode) \
@@ -139,3 +138,4 @@ extern uint32_t simplefs_ext_search(struct simplefs_file_ei_block *index,
 #endif /* __KERNEL__ */
 
 #endif /* SIMPLEFS_H */
+

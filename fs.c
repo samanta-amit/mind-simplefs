@@ -19,6 +19,9 @@
 #include "simplefs.h"
 
 
+/* spin locks for hashtable */
+struct spinlock *test_spin_lock;
+
 unsigned long sharedaddress;
 unsigned long shmem_address[10];
 static int readAddress = 0;
@@ -27,12 +30,17 @@ static int readAddress = 0;
 module_param(readAddress,int, 0);
 module_param_array(shmem_address, long, NULL, 0);
 
+spinlock_t pgfault_lock;
+struct inode * inode_list[number_of_inodes]; 
+
+
 /* Mount a simplefs partition */
 struct dentry *simplefs_mount(struct file_system_type *fs_type,
                               int flags,
                               const char *dev_name,
                               void *data)
 {
+    int i;
     struct dentry *dentry =
         mount_bdev(fs_type, flags, dev_name, data, simplefs_fill_super);
     if (IS_ERR(dentry))
@@ -40,13 +48,28 @@ struct dentry *simplefs_mount(struct file_system_type *fs_type,
     else
         pr_info("'%s' mount success\n", dev_name);
 
+ 
+
+    struct inode * shared_inode_list = alloc_kshmem(sizeof(struct inode) * number_of_inodes, DISAGG_KSHMEM_SERV_FS_ID);
+    pr_err("shared inode list address %d", shared_inode_list);
+    for(i = 0; i < number_of_inodes; i++){
+	inode_list[i] = &(shared_inode_list[i]);
+
+	//set state of the inode with magic number
+	inode_list[i]->i_state = 1337;
+    	pr_err("inode state %d", inode_list[i]->i_state); 
+
+    }
+    
+	
+
     return dentry;
 }
 
 /* Unmount a simplefs partition */
 void simplefs_kill_sb(struct super_block *sb)
 {
-    kill_block_super(sb);
+    //kill_block_super(sb);
 
     pr_info("unmounted disk\n");
 }
@@ -63,18 +86,19 @@ static struct file_system_type simplefs_file_system_type = {
 
 static int __init simplefs_init(void)
 {
-    int i;
-    int ret;
-    u64 alloc_size = sizeof(3 * PAGE_SIZE);
-
     pr_info("loading simplefs\n");
+    unsigned long mm_addr;
+    int i;
+    struct task_struct *tsk;
     pr_info("value of readAddress %d", readAddress);
-    sharedaddress = 18446718784707231744llu;   //-234881024; //alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
+    u64 alloc_size = sizeof(3 * PAGE_SIZE);
+    sharedaddress = 18446718784707231744;   //-234881024; //alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
+
 
     if(!readAddress){
 	    pr_info("addresses:");
 	    for(i = 0; i < 10; i++){
-		    shmem_address[i] = (uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
+		    shmem_address[i] = alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
 		    pr_info("%ld, ", shmem_address[i]);
 	    }
 		pr_info("single print addresses %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld", shmem_address[0],
@@ -110,7 +134,17 @@ static int __init simplefs_init(void)
 	    pr_info("KernShmem: alloc with VA result Requested [0x%lx] <-> Received [0x%lx]\n", test_address, temp);
     }*/
 
-    ret = simplefs_init_inode_cache();
+   
+
+
+   test_spin_lock = kmalloc(sizeof(struct spinlock), GFP_KERNEL);
+//   pgfault_lock = kmalloc(sizeof(struct spinlock), GFP_KERNEL);
+   spin_lock_init(&pgfault_lock);
+
+   /* initializes the spin lock */
+    spin_lock_init(test_spin_lock);
+
+    int ret = simplefs_init_inode_cache();
     if (ret) {
         pr_err("inode cache creation failed\n");
         goto end;
@@ -145,3 +179,4 @@ module_exit(simplefs_exit);
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_AUTHOR("National Cheng Kung University, Taiwan");
 MODULE_DESCRIPTION("a simple file system");
+

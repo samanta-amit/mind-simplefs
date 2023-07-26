@@ -38,8 +38,10 @@ static struct inode *simplefs_alloc_inode(struct super_block *sb)
 
 static void simplefs_destroy_inode(struct inode *inode)
 {
+	/*
     struct simplefs_inode_info *ci = SIMPLEFS_INODE(inode);
     kmem_cache_free(simplefs_inode_cache, ci);
+    */
 }
 
 static int simplefs_write_inode(struct inode *inode,
@@ -96,6 +98,9 @@ static void simplefs_put_super(struct super_block *sb)
 
 static int simplefs_sync_fs(struct super_block *sb, int wait)
 {
+    //TODO address this at some point
+    return 0;
+    
     struct simplefs_sb_info *sbi = SIMPLEFS_SB(sb);
     struct simplefs_sb_info *disk_sb;
     int i;
