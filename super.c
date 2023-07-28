@@ -22,7 +22,7 @@ int simplefs_init_inode_cache(void)
 
 void simplefs_destroy_inode_cache(void)
 {
-    kmem_cache_destroy(simplefs_inode_cache);
+    //kmem_cache_destroy(simplefs_inode_cache);
 }
 
 static struct inode *simplefs_alloc_inode(struct super_block *sb)
@@ -38,8 +38,8 @@ static struct inode *simplefs_alloc_inode(struct super_block *sb)
 
 static void simplefs_destroy_inode(struct inode *inode)
 {
-    struct simplefs_inode_info *ci = SIMPLEFS_INODE(inode);
-    kmem_cache_free(simplefs_inode_cache, ci);
+    //struct simplefs_inode_info *ci = SIMPLEFS_INODE(inode);
+    //kmem_cache_free(simplefs_inode_cache, ci);
 }
 
 static int simplefs_write_inode(struct inode *inode,
@@ -199,7 +199,7 @@ int simplefs_fill_super(struct super_block *sb, void *data, int silent)
     sb->s_op = &simplefs_super_ops;
 
     /* stolen from orangefs */
-    sb->s_d_op = &simplefs_dentry_ops;
+    //sb->s_d_op = &simplefs_dentry_ops;
 
 
 

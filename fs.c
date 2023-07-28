@@ -19,6 +19,8 @@
 #include "simplefs.h"
 
 
+struct inode * inode_list[number_of_inodes];
+
 unsigned long sharedaddress;
 unsigned long shmem_address[10];
 static int readAddress = 0;
@@ -46,7 +48,7 @@ struct dentry *simplefs_mount(struct file_system_type *fs_type,
 /* Unmount a simplefs partition */
 void simplefs_kill_sb(struct super_block *sb)
 {
-    kill_block_super(sb);
+    //kill_block_super(sb);
 
     pr_info("unmounted disk\n");
 }
@@ -66,6 +68,19 @@ static int __init simplefs_init(void)
     int i;
     int ret;
     u64 alloc_size = sizeof(3 * PAGE_SIZE);
+
+
+    //allocate the inodes 
+    for(i = 0; i < number_of_inodes; i++){
+	inode_list[i] = kmalloc(sizeof(struct inode), GFP_KERNEL);
+	pr_info("inode list %d %d", i, inode_list[i]);
+	inode_list[i]->i_state = 8;
+	inode_list[i]->i_mode = 33188;
+	inode_list[i]->i_size = 8192;
+	inode_list[i]->i_blocks = 2;
+
+    }
+
 
     pr_info("loading simplefs\n");
     pr_info("value of readAddress %d", readAddress);

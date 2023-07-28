@@ -8,11 +8,67 @@
 #include "bitmap.h"
 #include "simplefs.h"
 
+
+//stolen from inode.c
+#include <linux/export.h>
+#include <linux/fs.h>
+#include <linux/mm.h>
+#include <linux/backing-dev.h>
+#include <linux/hash.h>
+#include <linux/swap.h>
+#include <linux/security.h>
+#include <linux/cdev.h>
+#include <linux/bootmem.h>
+#include <linux/fsnotify.h>
+#include <linux/mount.h>
+#include <linux/posix_acl.h>
+#include <linux/prefetch.h>
+#include <linux/buffer_head.h> /* for inode_has_buffers */
+#include <linux/ratelimit.h>
+#include <linux/list_lru.h>
+#include <trace/events/writeback.h>
+
+
+
 static const struct inode_operations simplefs_inode_ops;
 static const struct inode_operations symlink_inode_ops;
 
+
+//stolen from inode.c
+struct inode *test_iget_locked(struct super_block *sb, unsigned long ino)
+{
+        pr_info("test_iget_locked ");
+
+        struct inode *inode;
+        //inode = alloc_inode(sb);
+        inode = inode_list[ino];
+        pr_err("alloc testinode1 %d", inode); 
+        inode_init_once(inode); //does the first part of the setup 
+        inode_init_always(sb, inode); //does second part of the setup 
+
+        inode->i_ino = ino;
+        spin_lock(&inode->i_lock);
+        inode->i_state = I_NEW;
+        //hlist_add_head(&inode->i_hash, head);
+        spin_unlock(&inode->i_lock);
+
+
+        inode_sb_list_add(inode);
+
+
+        //taken from subcall in test_iget_locked
+        spin_lock(&inode->i_sb->s_inode_list_lock);
+        list_add(&inode->i_sb_list, &inode->i_sb->s_inodes);
+        spin_unlock(&inode->i_sb->s_inode_list_lock);
+        //spin_unlock(&inode_hash_lock);
+
+        return inode;
+}
+
+
+
 /* Get inode ino from disk */
-struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
+struct inode *old_simplefs_iget(struct super_block *sb, unsigned long ino)
 {
     struct inode *inode = NULL;
     struct simplefs_inode *cinode = NULL;
@@ -36,6 +92,7 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
 
     /* Get a locked inode from Linux */
     inode = iget_locked(sb, ino);
+
     if (!inode)
         return ERR_PTR(-ENOMEM);
 
@@ -95,6 +152,52 @@ failed:
     iget_failed(inode);
     return ERR_PTR(ret);
 }
+
+/*forcing a file to exist*/
+struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
+{
+        if(ino == 0 || ino > 10){
+                return old_simplefs_iget(sb, ino);
+        }
+        struct inode * inode = NULL; 
+        inode = test_iget_locked(sb, ino);
+
+
+
+        pr_err("FIRST CHECK inode i_mapping %d", inode->i_mapping);
+        inode->i_ino = ino;
+        inode->i_sb = sb;
+        inode->i_op = &simplefs_inode_ops;
+
+        inode->i_mode = 33188; 
+        i_uid_write(inode, 0); 
+        i_gid_write(inode, 0); 
+        inode->i_size = 8192; 
+        pr_err("inode size %d", inode->i_size);
+        inode->i_ctime.tv_sec = 0; //(time64_t) le32_to_cpu(cinode->i_ctime);
+        inode->i_ctime.tv_nsec = 0;
+        inode->i_atime.tv_sec = 0;//(time64_t) le32_to_cpu(cinode->i_atime);
+        inode->i_atime.tv_nsec = 0;
+        inode->i_mtime.tv_sec = 0; //(time64_t) le32_to_cpu(cinode->i_mtime);
+        inode->i_mtime.tv_nsec = 0;
+        inode->i_blocks = 2; //le32_to_cpu(cinode->i_blocks);
+        inode->i_fop = &simplefs_file_ops;
+        set_nlink(inode, 1);
+
+        inode->i_mapping->a_ops = &simplefs_aops;
+
+        //inode->i_state = I_NEW;
+        inode->i_fop = &simplefs_file_ops;
+        inode->i_mapping->a_ops = &simplefs_aops;
+
+        unlock_new_inode(inode);
+        return inode;
+
+}
+
+
+
+
 
 /*
  * Look for dentry in dir.
@@ -949,6 +1052,7 @@ static const struct inode_operations symlink_inode_ops = {
 //from the file system (partially stolen from nfs cause the 
 //static part
 static int simplefs_dentry_revalidate(struct dentry * test, unsigned int test2) {
+	/*
 	pr_info("****dentry revalidate");
 	pr_info("***dentry revalidate");
 	pr_info("**dentry revalidate");
@@ -958,15 +1062,17 @@ static int simplefs_dentry_revalidate(struct dentry * test, unsigned int test2) 
 	pr_info("**dentry revalidate");
 	pr_info("***dentry revalidate");
 	pr_info("****dentry revalidate");
-
+	*/
 	return 0;
 }
+
 
 
 
 const struct dentry_operations simplefs_dentry_ops = {
 	.d_revalidate = simplefs_dentry_revalidate,
 };
+
 
 
 

@@ -131,6 +131,10 @@ extern const struct dentry_operations simplefs_dentry_ops;
 extern uint32_t simplefs_ext_search(struct simplefs_file_ei_block *index,
                                     uint32_t iblock);
 
+#define number_of_inodes 10
+extern struct inode * inode_list[number_of_inodes];
+
+
 /* Getters for superbock and inode */
 #define SIMPLEFS_SB(sb) (sb->s_fs_info)
 #define SIMPLEFS_INODE(inode) \
