@@ -196,6 +196,56 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
 }
 
 
+/*
+ * Look for dentry in dir.
+ * Fill dentry with NULL if not in dir, with the corresponding inode if found.
+ * Returns NULL on success.
+ */
+static struct dentry *simplefs_lookup(struct inode *dir,
+                                      struct dentry *dentry,
+                                      unsigned int flags)
+{
+    struct super_block *sb = dir->i_sb;
+    struct simplefs_inode_info *ci_dir = SIMPLEFS_INODE(dir);
+    struct inode *inode = NULL;
+    struct buffer_head *bh = NULL, *bh2 = NULL;
+    struct simplefs_file_ei_block *eblock = NULL;
+    struct simplefs_dir_block *dblock = NULL;
+    struct simplefs_file *f = NULL;
+    int ei, bi, fi;
+    int i;
+    int fileexists = 0;
+    char * teststrings[10] = {"file2", "file3", "file4", "file5", "file6", "file7", "file8", "file9", "file10", "file11" };
+
+
+
+    pr_info("test strings 0 %s", teststrings[0]);
+    /* Check filename length */
+    if (dentry->d_name.len > SIMPLEFS_FILENAME_LEN)
+        return ERR_PTR(-ENAMETOOLONG);
+
+    pr_info("simplefs lookup called %s", dentry->d_name.name);
+    
+    for(i = 0; i < 10; i++){
+            pr_info("testing file %s", teststrings[i]);
+            if (!strncmp(teststrings[i], dentry->d_name.name, SIMPLEFS_FILENAME_LEN)) {
+                    pr_info("found file");
+                    inode = simplefs_iget(sb, i);
+                    fileexists = 1;
+                    break;
+            }
+    }
+
+    /* Update directory access time */
+    dir->i_atime = current_time(dir);
+    mark_inode_dirty(dir);
+
+    /* Fill the dentry with the inode */
+    d_add(dentry, inode);
+
+    pr_info("lookup returning inode pointer %d", inode);
+    return NULL;
+}
 
 
 
@@ -204,7 +254,7 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
  * Fill dentry with NULL if not in dir, with the corresponding inode if found.
  * Returns NULL on success.
  */
-static struct dentry *simplefs_lookup(struct inode *dir,
+static struct dentry *old_simplefs_lookup(struct inode *dir,
                                       struct dentry *dentry,
                                       unsigned int flags)
 {

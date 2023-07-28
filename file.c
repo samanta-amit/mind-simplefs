@@ -978,6 +978,7 @@ static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
         struct file *filp = iocb->ki_filp;
         struct address_space *mapping = filp->f_mapping;
         struct inode *inode = mapping->host;
+	pr_info("inode pointer is %d", inode);
         struct file_ra_state *ra = &filp->f_ra;
         loff_t *ppos = &iocb->ki_pos;
         pgoff_t index;
@@ -986,16 +987,20 @@ static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
         unsigned long offset;      /* offset into pagecache page */
         unsigned int prev_offset;
         int error = 0;
+	pr_info("generic buffered read 1");
 
         if (unlikely(*ppos >= inode->i_sb->s_maxbytes))
                 return 0;
         iov_iter_truncate(iter, inode->i_sb->s_maxbytes);
+	pr_info("generic buffered read 2");
 
         index = *ppos >> PAGE_SHIFT;
         prev_index = ra->prev_pos >> PAGE_SHIFT;
         prev_offset = ra->prev_pos & (PAGE_SIZE-1);
         last_index = (*ppos + iter->count + PAGE_SIZE-1) >> PAGE_SHIFT;
         offset = *ppos & ~PAGE_MASK; //offset into the page
+
+	pr_info("generic buffered read 3");
 
         for (;;) {
                 struct page *page;
@@ -1009,7 +1014,6 @@ find_page:
                 pr_info("find page\n");
 
                 page = find_get_page(mapping, index);
-                ClearPageUptodate(page);
 
 
                 if (!page) {
@@ -1023,6 +1027,11 @@ find_page:
                         if (unlikely(page == NULL))
                                 goto no_cached_page;
                 }
+
+		//TODO moved to be after the find page check
+                ClearPageUptodate(page);
+
+
                 pr_info("page found is %d\n", page);
                 if (PageReadahead(page)) {
                         page_cache_async_readahead(mapping,
@@ -1219,13 +1228,18 @@ out:
 ssize_t
 simplefs_generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 {
+
+	pr_info("generic_file_read_iter 1");
         size_t count = iov_iter_count(iter);
         ssize_t retval = 0;
+	pr_info("generic_file_read_iter 2");
+
 
         if (!count)
                 goto out; /* skip atime */
 
         if (iocb->ki_flags & IOCB_DIRECT) {
+		pr_info("direct write");
                 struct file *file = iocb->ki_filp;
                 struct address_space *mapping = file->f_mapping;
                 struct inode *inode = mapping->host;
@@ -1266,8 +1280,11 @@ simplefs_generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
                     IS_DAX(inode))
                         goto out;
         }
+	pr_info("generic_file_read_iter 3");
 
         retval = simplefs_generic_file_buffered_read(iocb, iter, retval);
+	pr_info("generic_file_read_iter 4");
+
 out:
         return retval;
 }
