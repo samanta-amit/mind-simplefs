@@ -236,6 +236,7 @@ static struct dentry *simplefs_lookup(struct inode *dir,
             }
     }
 
+
     /* Update directory access time */
     dir->i_atime = current_time(dir);
     mark_inode_dirty(dir);
