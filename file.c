@@ -109,6 +109,77 @@ static struct page_coherence_state * pageinhashmap(unsigned long i_ino, int page
 
 }
 
+static void mind_pr_cache_dir_state(const char* msg,
+	unsigned long start_time, uintptr_t shmem_address,
+	unsigned long ack_counter, unsigned long target_counter)
+{
+	u16 state, sharer, dir_size, dir_lock, inv_cnt;
+	send_cache_dir_full_always_check(
+		DISAGG_KERN_TGID, shmem_address, &state, &sharer,
+		&dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
+	pr_info("%s - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %ld, tar_cnt: %ld, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
+		msg,
+		smp_processor_id(), DISAGG_KERN_TGID, shmem_address,
+		ack_counter, target_counter,
+		jiffies_to_msecs(jiffies - start_time), state, sharer);
+}
+
+/**
+ * Fetch a page from MIND's shared memory starting at shmem_address and
+ * putting it into the buffer at page_dma_address. Populates the value pointed
+ * to by data_size with the bytes copied from shared memory on success.
+ * Always returns 0; otherwise it trips a BUG_ON instead.
+ * 
+ * Requirements:
+ * Caller must ensure that page_dma_address is the DMA address of a page-sized
+ * buffer that this function can use without outside concurrent access.
+ */
+static int mind_fetch_page(
+	uintptr_t shmem_address, void *page_dma_address, size_t *data_size)
+{
+	struct fault_reply_struct ret_buf;
+	struct cache_waiting_node *wait_node = NULL;
+	int r;
+	unsigned long start_time = jiffies;
+
+	ret_buf.data_size = PAGE_SIZE;
+	ret_buf.data = page_dma_address;
+
+	pr_info("mind_fetch_page(shmem_address = 0x%lx, "
+		"page_dma_address = %p)", shmem_address, page_dma_address);
+
+	wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
+	BUG_ON(!wait_node);
+
+	mind_pr_cache_dir_state(
+		"BEFORFE PFAULT ACK/NACK",
+		start_time, shmem_address,
+		atomic_read(&wait_node->ack_counter),
+		atomic_read(&wait_node->target_counter));
+
+	BUG_ON(!is_kshmem_address(shmem_address));
+	// NULL struct task_struct* is okay here because
+	// if is_kshmem_address(shmem_address) then task_struct is never
+	// derefenced.
+	r = send_pfault_to_mn(NULL, 0, shmem_address, 0, &ret_buf);
+	pr_info("sending pfault to mn done");
+	wait_node->ack_buf = ret_buf.ack_buf;
+
+	pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
+	if(r <= 0)
+		cancel_waiting_for_nack(wait_node);
+	r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
+
+	mind_pr_cache_dir_state(
+		"AFTER PFAULT ACK/NACK",
+		start_time, shmem_address,
+		atomic_read(&wait_node->ack_counter),
+		atomic_read(&wait_node->target_counter));
+	
+	data_size = ret_buf.data_size;
+	return 0;
+}
+
 //this performs a read on the given page, read into the given buffer
 //this bypasses the normal read operations and does the minimal
 //amount of setup needed in order to call copy_page_to_iter
@@ -137,9 +208,8 @@ ssize_t simplefs_kernel_page_read(struct page * testpage, void * buf, size_t cou
 
 	set_fs(old_fs);
         return 0;
-
-
 }
+
 
 //this performs a write on the given page, using the given buffer
 //this bypasses the normal write operations and does the minimal
@@ -177,170 +247,59 @@ ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t co
 	set_fs(old_fs);
 
         return result;
-
-
 }
 
-static bool invalidate_page_write(struct inode * inode, struct page * pagep){ 
-		//void *pagep;
-		struct fault_reply_struct ret_buf;
-		struct cache_waiting_node *wait_node = NULL;
-		struct task_struct tsk3;
-	        struct task_struct tsk2;
-		struct cnthread_page *new_cnpage = NULL;
-		struct fault_msg_struct payload;
-		loff_t test = 20; 
-		struct page * testp = pagep;
-		//pr_info("testing %d", testp->flags);
-		int page_number = pagep->index;
-		int inode_number = inode->i_ino;
-	        struct cache_waiting_node *node = NULL;
-		u16 state = 0, sharer = 0;
-		u16 dir_size, dir_lock, inv_cnt;
-		unsigned long start_time;
-		int fault;
-		int wait_err = -1;
-		int cpu_id = 4; //get_cpu();
-		unsigned long address = 0;
-		unsigned long error_code = 0;
-		unsigned long current_shmem = (shmem_address[inode_number] + (PAGE_SIZE * (page_number)));
-		struct mm_struct *mm;
-		spinlock_t *ptl_ptr = NULL;	
-		pte_t *temppte;
-		void *ptrdummy;
-		static struct cnthread_inv_msg_ctx send_ctx;
-		pr_info("******writing page number %d inode number %d", page_number, inode_number);
-		pr_info("page pointer is: %p", pagep);
-		pr_info("inv tgid");	
-		//todo this wasn't done
-		tsk3.tgid = DISAGG_KERN_TGID;
-		pr_info("inv after tgid");
-	        
-	        tsk2.tgid = DISAGG_KERN_TGID;	
+static bool invalidate_page_write(struct file *file, struct inode * inode, struct page * pagep){
 
-		pr_info("inv page up to date %d", cpu_id);
-		wait_node = NULL;
+        struct page * testp = pagep;
+        uintptr_t inode_pages_address;
+        int r;
+        struct mm_struct *mm;
+        mm = get_init_mm();
+        spinlock_t *ptl_ptr = NULL;
+        pte_t *temppte;
+        void *ptrdummy;
+        static struct cnthread_inv_msg_ctx send_ctx;
+        loff_t test = 20; 
 
-		//TODO this were not initialized, why?
-		payload.address = address;
-		payload.error_code = error_code;
+        const struct address_space *mapping = file->f_mapping;
 
-		spin_lock(&dummy_page_lock);
-		pr_info("inbetween locks");
-		
-		ret_buf.data_size = PAGE_SIZE;
-		ret_buf.data = (void*)get_dummy_page_dma_addr(cpu_id);
-		pr_info("inv ret_buf address %p", ret_buf.data);
+        inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (pagep->index));
+
+        spin_lock(&dummy_page_lock);
+       
+        size_t data_size;
+        void *buf = get_dummy_page_dma_addr(get_cpu());
+        r = mind_fetch_page(inode_pages_address, buf, &data_size);
+        BUG_ON(r);
+
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+
+        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+
+        //writes data to that page
+        //copy data into dummy buffer, and send to switch
+        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+
+        /*for(i = 0; i < 20; i++){
+                pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(cpu_id))[i]);
+        }*/
 
 
-		start_time = jiffies;
-		node = add_waiting_node(DISAGG_KERN_TGID, current_shmem, NULL /* Unused by callee */);	
+        spin_lock(ptl_ptr);
 
-		pr_info("before send_pfault_to_mn write path");
-		pr_info("node pointer %p", node);	
-		pr_info("node addr 0x%lx", current_shmem);	
+        cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        temppte, CN_OTHER_PAGE, 0, buf);
+        
+        cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
+	spin_unlock(ptl_ptr);
+	spin_unlock(&dummy_page_lock);
 
-		send_cache_dir_full_always_check(tsk2.tgid, current_shmem, &state, &sharer,
-                                             &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
-                
-		printk(KERN_WARNING "ERROR: Cannot receive ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
-                   smp_processor_id(), tsk2.tgid, current_shmem,
-                   atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
-                   jiffies_to_msecs(jiffies - start_time), state, sharer);
-
-
-		//int is_kern_shared_mem = 1;
-		//wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk3.tgid, current_shmem, new_cnpage);
-		wait_node = node;	
-		pr_info("inv write address 0x%lx",current_shmem); 
-		pr_info("new printing");
-		pr_info("inv write ret buf test %p", &ret_buf);
-		pr_info("inv write tsk3 %p", &tsk3);
-	        pr_info("wait node address %p", &wait_node);		
-		fault = send_pfault_to_mn(&tsk3, error_code, current_shmem, 0, &ret_buf);
-		pr_info("inv write after pagefault fault is %d", fault);
-		pr_pgfault("inv CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, current_shmem);
-		pr_info("after send_pfault_to_mn");
-                
-		send_cache_dir_full_always_check(tsk2.tgid, current_shmem, &state, &sharer,
-                                             &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
-                
-		printk(KERN_WARNING "ERROR: Cannot receive ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
-                   smp_processor_id(), tsk2.tgid, current_shmem,
-                   atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
-                   jiffies_to_msecs(jiffies - start_time), state, sharer);
-
-		pr_info("before wait node");
-
-		wait_node->ack_buf = ret_buf.ack_buf;
-		pr_info("ack_buf %p", ret_buf.ack_buf);
-		pr_info("inv write fault %d", fault);
-
-		if(fault <= 0)
-		{
-			cancel_waiting_for_nack(wait_node);
-		}
-		wait_err = wait_ack_from_ctrl(wait_node, NULL, NULL, new_cnpage);	
-
-		mm = get_init_mm(); 
-
-		ptl_ptr = NULL;	
-		temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
-		pr_info("write path dummy buffer address: %p", (void*)get_dummy_page_buf_addr(cpu_id));
-		ptrdummy = get_dummy_page_buf_addr(cpu_id);
-		pr_info("Ox%llx\n", *(u64*)ptrdummy);
-
-
-
-		//writes data to that page
-		//copy data into dummy buffer, and send to switch
-		simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), PAGE_SIZE, &test);
-		//sprintf((void*)get_dummy_page_buf_addr(cpu_id), "yay it worked! testing write from 135______ this is working got from 135 ");
-
-		pr_info("Ox%llx\n", *(u64*)ptrdummy);
-
-
-		/*for(i = 0; i < 20; i++){
-			pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(cpu_id))[i]);
-		}*/
-
-		//evict 
-		spin_lock(ptl_ptr);
-		cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, current_shmem,
-				temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(cpu_id));
-                                
-		pr_info("after cn_copy_page_data_to_mn");
-		send_cache_dir_full_always_check(tsk2.tgid, current_shmem, &state, &sharer,
-                                             &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
-                
-		printk(KERN_WARNING "ERROR: Cannot receive ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
-                   smp_processor_id(), tsk2.tgid, current_shmem,
-                   atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
-                   jiffies_to_msecs(jiffies - start_time), state, sharer);
-		
-		cnthread_send_finish_ack(tsk3.tgid, current_shmem, &send_ctx, 0);
-
-		pr_info("after cnthread_send_finish_ack");
-
-                send_cache_dir_full_always_check(tsk2.tgid, current_shmem, &state, &sharer,
-                                             &dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
-
-                printk(KERN_WARNING "ERROR: Cannot receive ACK/NACK - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %d, tar_cnt: %d, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
-                   smp_processor_id(), tsk2.tgid, current_shmem,
-                   atomic_read(&node->ack_counter), atomic_read(&node->target_counter),
-                   jiffies_to_msecs(jiffies - start_time), state, sharer);
-
-		spin_unlock(ptl_ptr);
-
-		spin_unlock(&dummy_page_lock);
-		pr_info("outside locks");
-
-		//spin_unlock_irq(&mapping->tree_lock);
-		return true;
-
-
+	//spin_unlock_irq(&mapping->tree_lock);
+	return true;
 }
+
 
 //Caller has to have inode lock
 //before calling this this deletes the page from the page cache
@@ -367,72 +326,6 @@ static bool invalidatepage(unsigned long i_ino, int pagenum, void * testbuffer, 
 			pr_info("testing 0x%lx", testp->flags);
 			pr_info("testing2 %p", testbuffer);
 
-
-			/*
-			struct fault_reply_struct reply;
-			struct fault_reply_struct ret_buf;
-			struct cache_waiting_node *wait_node = NULL;
-			struct task_struct tsk;
-			pr_info("inv tgid");	
-			//todo this wasn't done
-			tsk.tgid = 3;
-			pr_info("inv after tgid");	
-
-			struct cnthread_page *new_cnpage = NULL;
-			int wait_err = -1;
-			int cpu_id = get_cpu();
-			pr_info("inv page up to date %d", cpu_id);
-			static spinlock_t dummy_page_lock;
-			wait_node = NULL;
-
-			//TODO this were not initialized, why?
-			unsigned long address = 0;
-			unsigned long error_code = 0;
-			struct fault_msg_struct payload;
-			payload.address = address;
-			payload.error_code = error_code;
-
-			spin_lock(&dummy_page_lock);
-
-			ret_buf.data_size = PAGE_SIZE;
-			ret_buf.data = (void*)get_dummy_page_dma_addr(cpu_id);
-			pr_info("inv ret_buf address %d", ret_buf.data);
-
-			int is_kern_shared_mem = 1;
-			wait_node = add_waiting_node(is_kern_shared_mem ? DISAGG_KERN_TGID : tsk.tgid, sharedaddress & PAGE_MASK, new_cnpage);
-			pr_info("inv address %d", sharedaddress);
-			int fault = send_pfault_to_mn(&tsk, error_code, sharedaddress, 0, &ret_buf);
-
-			pr_pgfault("inv CN [%d]: fault handler start waiting 0x%lx\n", cpu_id, sharedaddress);
-			wait_node->ack_buf = ret_buf.ack_buf;
-			pr_info("inv fault %d", fault);
-
-			if(fault <= 0)
-			{
-				cancel_waiting_for_nack(wait_node);
-			}
-
-			struct mm_struct *mm = get_init_mm(); 
-
-			spinlock_t *ptl_ptr = NULL;	
-			pte_t *temppte = ensure_pte(mm, (void*)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
-
-			//writes data to that page
-			//copy data into dummy buffer, and send to switch
-			simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), 100, &test);
-
-
-			//evict 
-			spin_lock(ptl_ptr);
-			cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, sharedaddress,
-					temppte, CN_OTHER_PAGE, 0, (void*)get_dummy_page_dma_addr(cpu_id));
-			spin_unlock(ptl_ptr);
-
-			//TODO this should be after we clear the pages
-			spin_unlock(&dummy_page_lock);
-			*/
-
-			//radix_tree_delete(&mapping->page_tree, pagenum);
 			ClearPageUptodate(testp);
 			//mapping->nrpages--; TODO figure out if we need this
 
@@ -556,7 +449,6 @@ static void performcoherence(struct inode * inode, int page, struct address_spac
 } 
 
 /*
- *
  * STOLEN FROM MPAGE.C
  * support function for mpage_readpages.  The fs supplied get_block might
  * return an up to date buffer.  This is used to map that buffer into
@@ -600,77 +492,6 @@ do {
 	} while (page_bh != head);
 }
 
-
-static void mind_pr_cache_dir_state(const char* msg,
-	unsigned long start_time, uintptr_t shmem_address,
-	unsigned long ack_counter, unsigned long target_counter)
-{
-	u16 state, sharer, dir_size, dir_lock, inv_cnt;
-	send_cache_dir_full_always_check(
-		DISAGG_KERN_TGID, shmem_address, &state, &sharer,
-		&dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
-	pr_info("%s - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %ld, tar_cnt: %ld, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
-		msg,
-		smp_processor_id(), DISAGG_KERN_TGID, shmem_address,
-		ack_counter, target_counter,
-		jiffies_to_msecs(jiffies - start_time), state, sharer);
-}
-
-/**
- * Fetch a page from MIND's shared memory starting at shmem_address and
- * putting it into the buffer at page_dma_address. Populates the value pointed
- * to by data_size with the bytes copied from shared memory on success.
- * Always returns 0; otherwise it trips a BUG_ON instead.
- * 
- * Requirements:
- * Caller must ensure that page_dma_address is the DMA address of a page-sized
- * buffer that this function can use without outside concurrent access.
- */
-static int mind_fetch_page(
-	uintptr_t shmem_address, void *page_dma_address, size_t *data_size)
-{
-	struct fault_reply_struct ret_buf;
-	struct cache_waiting_node *wait_node = NULL;
-	int r;
-	unsigned long start_time = jiffies;
-
-	ret_buf.data_size = PAGE_SIZE;
-	ret_buf.data = page_dma_address;
-
-	pr_info("mind_fetch_page(shmem_address = 0x%lx, "
-		"page_dma_address = %p)", shmem_address, page_dma_address);
-
-	wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
-	BUG_ON(!wait_node);
-
-	mind_pr_cache_dir_state(
-		"READ PATH BEFORFE PFAULT ACK/NACK",
-		start_time, shmem_address,
-		atomic_read(&wait_node->ack_counter),
-		atomic_read(&wait_node->target_counter));
-
-	BUG_ON(!is_kshmem_address(shmem_address));
-	// NULL struct task_struct* is okay here because
-	// if is_kshmem_address(shmem_address) then task_struct is never
-	// derefenced.
-	r = send_pfault_to_mn(NULL, 0, shmem_address, 0, &ret_buf);
-	pr_info("sending pfault to mn done");
-	wait_node->ack_buf = ret_buf.ack_buf;
-
-	pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
-	if(r <= 0)
-		cancel_waiting_for_nack(wait_node);
-	r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
-
-	mind_pr_cache_dir_state(
-		"READ PATH AFTER PFAULT ACK/NACK",
-		start_time, shmem_address,
-		atomic_read(&wait_node->ack_counter),
-		atomic_read(&wait_node->target_counter));
-	
-	data_size = ret_buf.data_size;
-	return 0;
-}
 
 /*
  * Copies one block from MIND kernel shared memory into a buffer in the CN's
@@ -731,6 +552,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	return 0;
 }
 
+
 /*
  * Called by the page cache to write a dirty page to the physical disk (when
  * sync is called or when memory is needed).
@@ -739,6 +561,7 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 {
     return block_write_full_page(page, simplefs_file_get_block, wbc);
 }
+
 
 /*
  * Called by the VFS when a write() syscall occurs on file before writing the
@@ -795,6 +618,7 @@ static int simplefs_write_begin(struct file *file,
     return err;
 }
 
+
 /*
  * Called by the VFS after writing data from a write() syscall to the page
  * cache. This functions updates inode metadata and truncates the file if
@@ -820,7 +644,7 @@ static int simplefs_write_end(struct file *file,
     int ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
     if (ret < len) {
         pr_err("wrote less than requested.");
-	invalidate_page_write(inode, page);
+	invalidate_page_write(file, inode, page);
 
         return ret;
     }
@@ -869,11 +693,12 @@ static int simplefs_write_end(struct file *file,
     }
 end:
 
-    invalidate_page_write(inode, page);
+    invalidate_page_write(file, inode, page);
 
     return ret;
 
 }
+
 
 static ssize_t del_simplefs_sync_read(struct file *filp, char __user *buf, size_t len, loff_t *ppos)
 {
@@ -891,6 +716,7 @@ static ssize_t del_simplefs_sync_read(struct file *filp, char __user *buf, size_
         *ppos = kiocb.ki_pos;
         return ret;
 }
+
 
 //del prefix just stating that this isn't needed anymore
 ssize_t del_simplefs_vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
@@ -919,6 +745,7 @@ ssize_t del_simplefs_vfs_read(struct file *file, char __user *buf, size_t count,
 
         return ret;
 }
+
 
 //unused modified version of kernel read
 ssize_t simplefs_kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
@@ -955,9 +782,8 @@ ssize_t simplefs_kernel_read(struct file *file, void *buf, size_t count, loff_t 
 
 	set_fs(old_fs);
         return 0;
-
-
 }
+
 
 /**
  * generic_file_buffered_read - generic file read routine
@@ -1214,8 +1040,6 @@ out:
 }
 
 
-
-
 ssize_t
 simplefs_generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 {
@@ -1273,7 +1097,6 @@ out:
 }
 
 
-
 ssize_t
 simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 {
@@ -1308,7 +1131,7 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	unsigned int last_index = (*ppos + iter->count + PAGE_SIZE-1) >> PAGE_SHIFT; 
 	unsigned int offset = *ppos & ~PAGE_MASK;	
 	unsigned int count_test = iter->count;
-//	pr_info("**********index is %d last index is %d offset is %d count is %d", index, last_index, offset, count_test);
+	//pr_info("**********index is %d last index is %d offset is %d count is %d", index, last_index, offset, count_test);
 
 
 	pr_info("*****beginning read inode %d page %d", inode->i_ino, index);
@@ -1393,19 +1216,14 @@ ssize_t simplefs_file_write_iter(struct kiocb *iocb, struct iov_iter *from) {
 	//char * base = ((readiter->iov)->iov_base);
 	//char * base = ((&iter)->iov)->iov_base;
 
-
-
 	//TODO for some reason this had to be after the write
 	//probably because we don't do null checks
 	//this isn't a great place for this though
-
-
 
 	if (ret > 0)
 		ret = generic_write_sync(iocb, ret);
 
 	return ret;
-
 
 }
 
@@ -1423,3 +1241,6 @@ const struct file_operations simplefs_file_ops = {
     .write_iter = generic_file_write_iter,
     .fsync = generic_file_fsync,
 };
+
+
+
