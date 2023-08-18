@@ -291,7 +291,7 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
         cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
         temppte, CN_OTHER_PAGE, 0, buf);
         
-        cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
+        //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
 	spin_unlock(ptl_ptr);
 	spin_unlock(&dummy_page_lock);

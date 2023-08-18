@@ -9,6 +9,7 @@
 #include <../../include/disagg/cnthread_disagg.h>
 #include <../../include/disagg/exec_disagg.h>
 #include <../../include/disagg/fault_disagg.h>
+#include <../../include/disagg/network_rdma_disagg.h>
 #include <../../mm/internal.h>
 #include <../../roce_modules/roce_for_disagg/roce_disagg.h>
 #include <asm/traps.h>
@@ -60,9 +61,16 @@ static struct file_system_type simplefs_file_system_type = {
     .next = NULL,
 };
 
+u64 testing_invalidate_page_callback(void *addr, unsigned long size)
+{
+    pr_info("tesing invalidate page callback");
+    return 1024;
+}
+
 
 static int __init simplefs_init(void)
 {
+    set_rdma_rmap_callback(testing_invalidate_page_callback);
     int i;
     int ret;
     u64 alloc_size = sizeof(3 * PAGE_SIZE);
