@@ -180,6 +180,53 @@ static int mind_fetch_page(
 	return 0;
 }
 
+static int mind_fetch_page_write(
+        uintptr_t shmem_address, void *page_dma_address, size_t *data_size)
+{
+        struct fault_reply_struct ret_buf;
+        struct cache_waiting_node *wait_node = NULL;
+        int r;
+        unsigned long start_time = jiffies;
+
+        ret_buf.data_size = PAGE_SIZE;
+        ret_buf.data = page_dma_address;
+
+        pr_info("mind_fetch_page(shmem_address = 0x%lx, "
+                "page_dma_address = %p)", shmem_address, page_dma_address);
+
+        wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
+        BUG_ON(!wait_node);
+
+        mind_pr_cache_dir_state(
+                "BEFORFE PFAULT ACK/NACK",
+                start_time, shmem_address,
+                atomic_read(&wait_node->ack_counter),
+                atomic_read(&wait_node->target_counter));
+
+        BUG_ON(!is_kshmem_address(shmem_address));
+        // NULL struct task_struct* is okay here because
+        // if is_kshmem_address(shmem_address) then task_struct is never
+        // derefenced.
+        r = send_pfault_to_mn(NULL, X86_PF_WRITE, shmem_address, 0, &ret_buf);
+        pr_info("sending pfault to mn done");
+        wait_node->ack_buf = ret_buf.ack_buf;
+
+        pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
+        if(r <= 0)
+                cancel_waiting_for_nack(wait_node);
+        r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
+
+        mind_pr_cache_dir_state(
+                "AFTER PFAULT ACK/NACK",
+                start_time, shmem_address,
+                atomic_read(&wait_node->ack_counter),
+                atomic_read(&wait_node->target_counter));
+
+        data_size = ret_buf.data_size;
+        return 0;
+}
+
+
 //this performs a read on the given page, read into the given buffer
 //this bypasses the normal read operations and does the minimal
 //amount of setup needed in order to call copy_page_to_iter
@@ -270,7 +317,7 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
        
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(get_cpu());
-        r = mind_fetch_page(inode_pages_address, buf, &data_size);
+        r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         BUG_ON(r);
 
         temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);

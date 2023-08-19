@@ -64,13 +64,15 @@ static struct file_system_type simplefs_file_system_type = {
 u64 testing_invalidate_page_callback(void *addr, unsigned long size)
 {
     pr_info("tesing invalidate page callback");
+    pr_info("tesing invalidate page callback");
+    pr_info("tesing invalidate page callback");
     return 1024;
 }
 
 
 static int __init simplefs_init(void)
 {
-    set_rdma_rmap_callback(testing_invalidate_page_callback);
+    set_invalidate_page_callback(testing_invalidate_page_callback);
     int i;
     int ret;
     u64 alloc_size = sizeof(3 * PAGE_SIZE);
