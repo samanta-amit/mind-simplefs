@@ -69,10 +69,17 @@ u64 testing_invalidate_page_callback(void *addr, unsigned long size)
     return 1024;
 }
 
+u64 shmem_address_check(void *addr, unsigned long size)
+{
+    pr_info("tesing shmem address callback");
+    return 0;
+}
+
 
 static int __init simplefs_init(void)
 {
     set_invalidate_page_callback(testing_invalidate_page_callback);
+    set_shmem_address_check(shmem_address_check);
     int i;
     int ret;
     u64 alloc_size = sizeof(3 * PAGE_SIZE);
