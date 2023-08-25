@@ -61,21 +61,6 @@ static struct file_system_type simplefs_file_system_type = {
     .next = NULL,
 };
 
-u64 testing_invalidate_page_callback(void *addr, unsigned long size)
-{
-    pr_info("tesing invalidate page callback");
-    pr_info("tesing invalidate page callback");
-    pr_info("tesing invalidate page callback");
-    return 1024;
-}
-
-u64 shmem_address_check(void *addr, unsigned long size)
-{
-    pr_info("tesing shmem address callback");
-    return 0;
-}
-
-
 static int __init simplefs_init(void)
 {
     set_invalidate_page_callback(testing_invalidate_page_callback);

@@ -32,8 +32,8 @@
 // "MSI" coherence states tracked by this FS's coherence scheme.
 enum coherence_state {
 	CO_I = 0, // Invalid state; such pages may not be accessed at local CN.
-	CO_S = 0, // Shared state; page is readable at the local CN.
-	CO_M = 0, // Modifiest state; page is modifable at local CN.
+	CO_S = 2, // Shared state; page is readable at the local CN.
+	CO_M = 1, // Modifiest state; page is modifable at local CN.
 };
 
 // For (inode number, page number in that inode), tracks coherence state.
@@ -45,10 +45,30 @@ struct page_coherence_state {
 	struct hlist_node link;
 };
 
+struct shmem_coherence_state {
+    	unsigned long shmem_addr;
+	unsigned long i_ino;
+	int pagenum;
+	enum coherence_state state;
+	struct address_space *mapping;
+	struct hlist_node link;
+};
+
+
+
+
+
 // Maps (inode number, page offset) -> MSI coherence state.
 DEFINE_HASHTABLE(page_states, 8); // 8 = 256 buckets
 // Protects page_states and everything it references.
 DEFINE_SPINLOCK(page_states_lock);
+
+
+DEFINE_HASHTABLE(shmem_states, 8); // 8 = 256 buckets
+// Protects page_states and everything it references.
+DEFINE_SPINLOCK(shmem_states_lock);
+
+
 
 // Ensures no two threads attempt to use the same dummy buffer at the same time.
 // Each dummy buffer is per-core, but this prevents context switches and
@@ -80,6 +100,53 @@ static void hash_inode_page(int inodenum, int pagenum, struct address_space *map
 	spin_unlock(&page_states_lock);
 }
 
+static void hash_shmem(unsigned long shmem_addr, int inodenum, int pagenum, struct address_space *mapping, int state) {
+	pr_info("adding shmem information to hashtable");
+	struct shmem_coherence_state *shmem_state;
+	//refer more to Documentation/kernel-hacking/hacking.rst
+	shmem_state = kmalloc(sizeof(struct shmem_coherence_state), GFP_KERNEL);
+	shmem_state->i_ino = inodenum;
+	shmem_state->pagenum = pagenum;
+	shmem_state->mapping = mapping;
+	shmem_state->state = state;
+	shmem_state->shmem_addr = shmem_addr;
+
+	spin_lock(&shmem_states_lock);
+	hash_add(shmem_states, &(shmem_state->link), shmem_addr);
+	spin_unlock(&shmem_states_lock);
+}
+
+//https://kernelnewbies.org/FAQ/Hashtables
+//returns page_coherence_state if the page is in the hashmap
+//checks the index for the inode number, and then iterates
+//through the list of all the inode/page combos that end up 
+//in the same bucket.
+static struct shmem_coherence_state * shmem_in_hashmap(unsigned long shmem_addr) {
+	struct shmem_coherence_state *tempshmem;
+	int i = shmem_addr;
+
+	//TODO make sure that page is still valid, and hasn't been removed from cache
+
+	//locking the spin lock
+	spin_lock(&shmem_states_lock);
+
+	hash_for_each(shmem_states, i, tempshmem, link) {
+		if(tempshmem->shmem_addr == shmem_addr){ 
+			//unlocking the spin lock
+			spin_unlock(&shmem_states_lock);
+			return tempshmem; //current;
+		}
+	}	
+
+	//unlocking the spin lock
+	spin_unlock(&shmem_states_lock);
+
+	return NULL; //NULL;
+
+}
+
+
+
 //https://kernelnewbies.org/FAQ/Hashtables
 //returns page_coherence_state if the page is in the hashmap
 //checks the index for the inode number, and then iterates
@@ -108,6 +175,9 @@ static struct page_coherence_state * pageinhashmap(unsigned long i_ino, int page
 	return NULL; //NULL;
 
 }
+
+
+
 
 static void mind_pr_cache_dir_state(const char* msg,
 	unsigned long start_time, uintptr_t shmem_address,
@@ -337,7 +407,13 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
 
         cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
         temppte, CN_OTHER_PAGE, 0, buf);
-        
+
+
+	//changes for adding data to hashtable (1 for write mode
+	hash_shmem(inode_pages_address, mapping->host->i_ino, pagep->index, mapping, 1);
+
+
+
         //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
 	spin_unlock(ptl_ptr);
@@ -1273,6 +1349,159 @@ ssize_t simplefs_file_write_iter(struct kiocb *iocb, struct iov_iter *from) {
 	return ret;
 
 }
+
+
+
+
+
+
+u64 shmem_address_check(void *addr, unsigned long size)
+{
+
+    pr_info("tesing shmem address callback");
+    struct  shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
+  	if(coherence_state != NULL){
+		pr_info("shmem was in hash table");
+		pr_info("shmem address %ld", coherence_state->shmem_addr);
+		pr_info("shmem i_ino %d", coherence_state->i_ino);
+		pr_info("shmem pagenum %d", coherence_state->pagenum);
+		pr_info("shmem coherence state %d", coherence_state->state);
+		return 1;
+	}else{
+		pr_info("shmem was not in the hashtable");
+	}
+
+    return 0;
+}
+
+
+
+static bool shmem_invalidate_page(struct address_space *mapping, struct page * pagep){
+
+        struct page * testp = pagep;
+        uintptr_t inode_pages_address;
+        int r;
+        struct mm_struct *mm;
+        mm = get_init_mm();
+        spinlock_t *ptl_ptr = NULL;
+        pte_t *temppte;
+        void *ptrdummy;
+        static struct cnthread_inv_msg_ctx send_ctx;
+        loff_t test = 20; 
+
+        inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (pagep->index));
+
+	pr_info("inode pages address is %ld", inode_pages_address);
+        spin_lock(&dummy_page_lock);
+       
+        size_t data_size;
+        void *buf = get_dummy_page_dma_addr(get_cpu());
+        
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+
+        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+
+        //writes data to that page
+        //copy data into dummy buffer, and send to switch
+        //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+
+        spin_lock(ptl_ptr);
+
+        //cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        //temppte, CN_TARGET_PAGE, 0, buf);
+
+	//_cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, NULL); //inv_ack_buf);
+
+	cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
+
+	spin_unlock(ptl_ptr);
+	spin_unlock(&dummy_page_lock);
+
+	//spin_unlock_irq(&mapping->tree_lock);
+	return true;
+}
+
+
+
+
+static bool shmem_invalidate(struct shmem_coherence_state * coherence_state){
+
+	void *pagep;
+	struct address_space *mapping = coherence_state->mapping;
+
+	//lock hashtable	
+	spin_lock(&shmem_states_lock);
+
+	//lock page tree
+	spin_lock_irq(&mapping->tree_lock);
+
+
+	//delete page from page cache
+	//trying to mess with stuff from the page tree
+	//this is stolen from find_get_entry in filemap.c
+	//spin locks stolen from fs/nilfs2/page.c 
+	pagep = radix_tree_lookup(&mapping->page_tree, coherence_state->pagenum);
+
+	if(pagep){
+
+		struct page * testp = pagep;
+		
+		//perform page invalidation stuff here
+		pr_info("shmem_invalidate_page start");
+		shmem_invalidate_page(coherence_state->mapping, testp);
+		pr_info("shmem_invalidate_page end");
+
+
+
+		ClearPageUptodate(testp);
+		//mapping->nrpages--; TODO figure out if we need this
+
+	}else{
+		pr_info("page no longer in page cache");
+	}
+
+	//delete page from the hashmap
+	hash_del(&(coherence_state->link));
+
+	spin_unlock_irq(&mapping->tree_lock);
+	spin_unlock(&page_states_lock);
+
+
+	return true;
+
+}
+
+
+u64 testing_invalidate_page_callback(void *addr, unsigned long size)
+{
+    pr_info("testing invalidate page callback %ld", addr);
+    pr_info("testing invalidate page callback %ld", addr);
+    pr_info("testing invalidate page callback %ld", addr);
+    pr_info("testing invalidate page callback %ld", addr);
+    struct  shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
+    if(coherence_state != NULL){
+	    pr_info("shmem was in hash table");
+	    pr_info("shmem address %ld", coherence_state->shmem_addr);
+	    pr_info("shmem i_ino %d", coherence_state->i_ino);
+	    pr_info("shmem pagenum %d", coherence_state->pagenum);
+	    pr_info("shmem coherence state %d", coherence_state->state);
+	    shmem_invalidate(coherence_state);
+
+
+    }else{
+	pr_info("page no longer in hash table");
+
+    }
+    return 1024;
+}
+
+
+
+
+
+
+
+
 
 const struct address_space_operations simplefs_aops = {
     .readpage = simplefs_readpage,
