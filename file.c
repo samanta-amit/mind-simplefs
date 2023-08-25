@@ -1392,14 +1392,18 @@ static bool shmem_invalidate_page(struct address_space *mapping, struct page * p
         inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (pagep->index));
 
 	pr_info("inode pages address is %ld", inode_pages_address);
-        spin_lock(&dummy_page_lock);
-       
-        size_t data_size;
-        void *buf = get_dummy_page_dma_addr(get_cpu());
-        
-        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
 
-        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+
+      
+
+
+        spin_lock(&dummy_page_lock);
+
+        //void *buf = get_dummy_page_dma_addr(get_cpu());
+        
+        //temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+
+        //ptrdummy = get_dummy_page_buf_addr(get_cpu());
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
@@ -1408,7 +1412,7 @@ static bool shmem_invalidate_page(struct address_space *mapping, struct page * p
         spin_lock(ptl_ptr);
 
         //cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
-        //temppte, CN_TARGET_PAGE, 0, buf);
+        //temppte, CN_OTHER_PAGE, 0, buf);
 
 	//_cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, NULL); //inv_ack_buf);
 
