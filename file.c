@@ -1397,7 +1397,7 @@ static bool shmem_invalidate_page(struct address_space *mapping, struct page * p
       
 
 
-        spin_lock(&dummy_page_lock);
+        //spin_lock(&dummy_page_lock);
 
         //void *buf = get_dummy_page_dma_addr(get_cpu());
         
@@ -1409,7 +1409,7 @@ static bool shmem_invalidate_page(struct address_space *mapping, struct page * p
         //copy data into dummy buffer, and send to switch
         //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
 
-        spin_lock(ptl_ptr);
+        //spin_lock(ptl_ptr);
 
         //cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
         //temppte, CN_OTHER_PAGE, 0, buf);
@@ -1418,8 +1418,8 @@ static bool shmem_invalidate_page(struct address_space *mapping, struct page * p
 
 	cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
-	spin_unlock(ptl_ptr);
-	spin_unlock(&dummy_page_lock);
+	//spin_unlock(ptl_ptr);
+	//spin_unlock(&dummy_page_lock);
 
 	//spin_unlock_irq(&mapping->tree_lock);
 	return true;
