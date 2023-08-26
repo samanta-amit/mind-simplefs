@@ -113,12 +113,6 @@ static struct dentry *simplefs_lookup(struct inode *dir,
     struct simplefs_dir_block *dblock = NULL;
     struct simplefs_file *f = NULL;
     int ei, bi, fi;
-    pr_info("looking up dentry");
-    pr_info("looking up dentry");
-    pr_info("looking up dentry");
-    pr_info("looking up dentry");
-    pr_info("looking up dentry");
-    pr_info("looking up dentry");
     pr_info("dentry name %s", dentry->d_name.name);
 
     /* Check filename length */
@@ -949,15 +943,7 @@ static const struct inode_operations symlink_inode_ops = {
 //from the file system (partially stolen from nfs cause the 
 //static part
 static int simplefs_dentry_revalidate(struct dentry * test, unsigned int test2) {
-	pr_info("****dentry revalidate");
-	pr_info("***dentry revalidate");
-	pr_info("**dentry revalidate");
-	pr_info("*dentry revalidate");
     	pr_info("dentry revalidate name %s", test->d_name.name);
-	pr_info("*dentry revalidate");
-	pr_info("**dentry revalidate");
-	pr_info("***dentry revalidate");
-	pr_info("****dentry revalidate");
 
 	return 0;
 }
