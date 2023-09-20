@@ -424,6 +424,7 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
         //spin_unlock(&dummy_page_lock);
 
         //spin_unlock_irq(&mapping->tree_lock);
+
         return true;
 }
 
@@ -1333,7 +1334,7 @@ u64 shmem_address_check(void *addr, unsigned long size)
 }
 
 
-static bool shmem_invalidate_page_write(struct address_space * mapping, struct page * pagep){
+static bool shmem_invalidate_page_write(struct address_space * mapping, struct page * pagep, void *inv_argv){
 
         struct page * testp = pagep;
         uintptr_t inode_pages_address;
@@ -1369,12 +1370,35 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 
 
         spin_lock(ptl_ptr);
+	pr_info("inside ptl_ptr lock");
 
-        cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
-        temppte, CN_OTHER_PAGE, 0, buf);
+	struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
+        struct cnthread_inv_msg_ctx *inv_ctx = &((struct cnthread_inv_argv *)inv_argv)->inv_ctx;
+	
+	rdma_ctx = &inv_ctx->rdma_ctx;
+	inv_ctx->original_qp = (rdma_ctx->ret & CACHELINE_ROCE_RKEY_QP_MASK) >> CACHELINE_ROCE_RKEY_QP_SHIFT;
+        create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
+        *((u32 *)(&(inv_ctx->inval_buf[CACHELINE_ROCE_VOFFSET_TO_IP]))) = rdma_ctx->ip_val;
+
+	pr_info("inv_ctx->original_qp %d", inv_ctx->original_qp);
+	
+	u32 req_qp = (get_id_from_requester(inv_ctx->rdma_ctx.requester) * DISAGG_QP_PER_COMPUTE) + inv_ctx->original_qp;
+        pr_info("req_qp %d", req_qp);
+	
+	pr_info("before cn_copy_page");
+	cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        temppte, CN_TARGET_PAGE, req_qp, buf);
+        pr_info("after cn_copy_page");
+	
+	pr_info("before inval ack");
+	pr_info("inv_ctx->inval_buf %d", inv_ctx->inval_buf);
+        _cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
+        pr_info("after inval ack");
         
-        cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
-
+	pr_info("before FinACK");
+        cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
+        pr_info("after FinACK");
+	
 	spin_unlock(ptl_ptr);
 	spin_unlock(&dummy_page_lock);
 
@@ -1385,7 +1409,7 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 
 
 
-static bool shmem_invalidate(struct shmem_coherence_state * coherence_state){
+static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, void *inv_argv){
 
 	void *pagep;
 	struct address_space *mapping = coherence_state->mapping;
@@ -1408,7 +1432,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state){
 		
 		//perform page invalidation stuff here
 		pr_info("shmem_invalidate_page start");
-		shmem_invalidate_page_write(coherence_state->mapping, testp);
+		shmem_invalidate_page_write(coherence_state->mapping, testp, inv_argv);
 
 		pr_info("shmem_invalidate_page end");
 
@@ -1429,20 +1453,21 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state){
 }
 
 
-u64 testing_invalidate_page_callback(void *addr, unsigned long size)
+u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
     pr_info("testing invalidate page callback %ld", addr);
     pr_info("testing invalidate page callback %ld", addr);
     pr_info("testing invalidate page callback %ld", addr);
     pr_info("testing invalidate page callback %ld", addr);
-    struct  shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
+   
+    struct shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
     if(coherence_state != NULL){
 	    pr_info("shmem was in hash table");
 	    pr_info("shmem address %ld", coherence_state->shmem_addr);
 	    pr_info("shmem i_ino %d", coherence_state->i_ino);
 	    pr_info("shmem pagenum %d", coherence_state->pagenum);
 	    pr_info("shmem coherence state %d", coherence_state->state);
-	    shmem_invalidate(coherence_state);
+	    shmem_invalidate(coherence_state, inv_argv);
 
 
     }else{
@@ -1451,16 +1476,6 @@ u64 testing_invalidate_page_callback(void *addr, unsigned long size)
     }
     return 1024;
 }
-
-
-
-
-
-
-
-
-
-
 
 
 const struct address_space_operations simplefs_aops = {

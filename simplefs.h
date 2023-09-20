@@ -133,7 +133,7 @@ extern uint32_t simplefs_ext_search(struct simplefs_file_ei_block *index,
 
 
 u64 shmem_address_check(void *addr, unsigned long size);
-u64 testing_invalidate_page_callback(void *addr, unsigned long size);
+u64 testing_invalidate_page_callback(void *addr, void *inv_argv);
 
 
 /* Getters for superbock and inode */
