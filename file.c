@@ -389,7 +389,7 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
 
         inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (pagep->index));
 
-        //spin_lock(&dummy_page_lock);
+        spin_lock(&dummy_page_lock);
        	pr_info("invalidate_page_write 3");
 
         size_t data_size;
@@ -404,11 +404,12 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
-        //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
-
-        /*for(i = 0; i < 20; i++){
-                pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(cpu_id))[i]);
-        }*/
+        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+        
+	int i;
+        for(i = 0; i < 20; i++){
+                pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
+        }
 
 	pr_info("invalidate_page_write 5");
 
@@ -420,8 +421,8 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
 
         //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
-       // spin_unlock(ptl_ptr);
-        //spin_unlock(&dummy_page_lock);
+        // spin_unlock(ptl_ptr);
+        spin_unlock(&dummy_page_lock);
 
         //spin_unlock_irq(&mapping->tree_lock);
 
