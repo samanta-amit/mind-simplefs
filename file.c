@@ -76,7 +76,7 @@ DEFINE_HASHTABLE(shmem_states, 8); // 8 = 256 buckets
 DEFINE_SPINLOCK(shmem_states_lock);
 
 static void hash_shmem(unsigned long shmem_addr, int inodenum, int pagenum, struct address_space *mapping, int state) {
-	pr_info("adding shmem information to hashtable");
+	//pr_info("adding shmem information to hashtable");
 	struct shmem_coherence_state *shmem_state;
 	//refer more to Documentation/kernel-hacking/hacking.rst
 	shmem_state = kmalloc(sizeof(struct shmem_coherence_state), GFP_KERNEL);
@@ -138,7 +138,7 @@ extern unsigned long shmem_address[10];
 //there is currently not a 2D hashtable 
 static void hash_inode_page(int inodenum, int pagenum, struct address_space *mapping, int state) {
 	struct page_coherence_state *page_state;
-	pr_info("adding inode %d page %d to hash", inodenum, pagenum);
+	//pr_info("adding inode %d page %d to hash", inodenum, pagenum);
 	//malloc an inode item and add it to the hashmap	
 	//
 	//refer more to Documentation/kernel-hacking/hacking.rst
@@ -190,11 +190,11 @@ static void mind_pr_cache_dir_state(const char* msg,
 	send_cache_dir_full_always_check(
 		DISAGG_KERN_TGID, shmem_address, &state, &sharer,
 		&dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
-	pr_info("%s - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %ld, tar_cnt: %ld, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
-		msg,
-		smp_processor_id(), DISAGG_KERN_TGID, shmem_address,
-		ack_counter, target_counter,
-		jiffies_to_msecs(jiffies - start_time), state, sharer);
+	//pr_info("%s - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %ld, tar_cnt: %ld, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
+	//	msg,
+	//	smp_processor_id(), DISAGG_KERN_TGID, shmem_address,
+	//	ack_counter, target_counter,
+	//	jiffies_to_msecs(jiffies - start_time), state, sharer);
 }
 
 /**
@@ -218,8 +218,8 @@ static int mind_fetch_page(
 	ret_buf.data_size = PAGE_SIZE;
 	ret_buf.data = page_dma_address;
 
-	pr_info("mind_fetch_page(shmem_address = 0x%lx, "
-		"page_dma_address = %p)", shmem_address, page_dma_address);
+	//pr_info("mind_fetch_page(shmem_address = 0x%lx, "
+	//	"page_dma_address = %p)", shmem_address, page_dma_address);
 
 	wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
 	BUG_ON(!wait_node);
@@ -235,7 +235,7 @@ static int mind_fetch_page(
 	// if is_kshmem_address(shmem_address) then task_struct is never
 	// derefenced.
 	r = send_pfault_to_mn(NULL, 0, shmem_address, 0, &ret_buf);
-	pr_info("sending pfault to mn done");
+	//pr_info("sending pfault to mn done");
 	wait_node->ack_buf = ret_buf.ack_buf;
 
 	pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
@@ -264,8 +264,8 @@ static int mind_fetch_page_write(
         ret_buf.data_size = PAGE_SIZE;
         ret_buf.data = page_dma_address;
 
-        pr_info("mind_fetch_page(shmem_address = 0x%lx, "
-                "page_dma_address = %p)", shmem_address, page_dma_address);
+        //pr_info("mind_fetch_page(shmem_address = 0x%lx, "
+        //        "page_dma_address = %p)", shmem_address, page_dma_address);
 
         wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
         BUG_ON(!wait_node);
@@ -281,7 +281,7 @@ static int mind_fetch_page_write(
         // if is_kshmem_address(shmem_address) then task_struct is never
         // derefenced.
         r = send_pfault_to_mn(NULL, X86_PF_WRITE, shmem_address, 0, &ret_buf);
-        pr_info("sending pfault to mn done");
+        //pr_info("sending pfault to mn done");
         wait_node->ack_buf = ret_buf.ack_buf;
 
         pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
@@ -372,7 +372,7 @@ ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t co
 
 static bool invalidate_page_write(struct file *file, struct inode * inode, struct page * pagep){
 
-	pr_info("invalidate_page_write 1");
+	//pr_info("invalidate_page_write 1");
         struct page * testp = pagep;
         uintptr_t inode_pages_address;
         int r;
@@ -383,14 +383,14 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
         void *ptrdummy;
         static struct cnthread_inv_msg_ctx send_ctx;
         loff_t test = 20; 
-	pr_info("invalidate_page_write 2");
+	//pr_info("invalidate_page_write 2");
 
         const struct address_space *mapping = file->f_mapping;
 
         inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (pagep->index));
 
         spin_lock(&dummy_page_lock);
-       	pr_info("invalidate_page_write 3");
+       	//pr_info("invalidate_page_write 3");
 
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(get_cpu());
@@ -400,24 +400,24 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
         temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
 
         ptrdummy = get_dummy_page_buf_addr(get_cpu());
-	pr_info("invalidate_page_write 4");
+	//pr_info("invalidate_page_write 4");
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
         simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
         
-	int i;
-        for(i = 0; i < 20; i++){
-                pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
-        }
+	//int i;
+        //for(i = 0; i < 20; i++){
+        //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
+        //}
 
-	pr_info("invalidate_page_write 5");
+	//pr_info("invalidate_page_write 5");
 
         //spin_lock(ptl_ptr);
 
         //cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
         //temppte, CN_OTHER_PAGE, 0, buf);
-        pr_info("invalidate_page_write 6");
+        //pr_info("invalidate_page_write 6");
 
         //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
@@ -508,7 +508,7 @@ brelse_index:
 static void performcoherence(struct inode * inode, int page, struct address_space * mapping, int reqstate) {
     struct page_coherence_state * temp = pageinhashmap(inode->i_ino, page);
     if(temp == NULL){
-	pr_info("page number %d for inode %ld being added to hashmap", page, inode->i_ino);
+	//pr_info("page number %d for inode %ld being added to hashmap", page, inode->i_ino);
 	//if not then add it
 	hash_inode_page(inode->i_ino, page, mapping, 0);
 
@@ -588,7 +588,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 
 	const struct address_space *mapping = file->f_mapping;
 
-	pr_info("readpage ino %ld page %ld", mapping->host->i_ino, page->index);
+	//pr_info("readpage ino %ld page %ld", mapping->host->i_ino, page->index);
 
 	// Set up this ino/page offset in page_states if needed.
 	performcoherence(mapping->host, page->index, mapping, 2);
@@ -620,7 +620,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	BUG_ON(r);
 	
 	simplefs_kernel_page_write(page, get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, 0);
-	pr_info("read path after page write");
+	//pr_info("read path after page write");
 
 	spin_unlock(&dummy_page_lock);
 	unlock_page(page);
@@ -657,7 +657,7 @@ static int simplefs_write_begin(struct file *file,
 
 	    unsigned int currentpage = pos / PAGE_SIZE;
 	    unsigned int lastpage = (pos + len) / PAGE_SIZE;
-    pr_info("write begin page number %d end page number %d, for inode %ld write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
+    //pr_info("write begin page number %d end page number %d, for inode %ld write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
 
 
     struct inode *inode = file->f_inode;
@@ -879,7 +879,7 @@ ssize_t simplefs_kernel_read(struct file *file, void *buf, size_t count, loff_t 
 static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
                 struct iov_iter *iter, ssize_t written)
 {
-        pr_info("inside simplefs_generic_file_buffered_read\n");
+        //pr_info("inside simplefs_generic_file_buffered_read\n");
         struct file *filp = iocb->ki_filp;
         struct address_space *mapping = filp->f_mapping;
         struct inode *inode = mapping->host;
@@ -904,14 +904,14 @@ static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
 
         for (;;) {
                 struct page *page;
-                pr_info("looping page index %d offset %d\n", index, offset);
+                //pr_info("looping page index %d offset %d\n", index, offset);
                 pgoff_t end_index;
                 loff_t isize;
                 unsigned long nr, ret;
 
                 cond_resched();
 find_page:
-                pr_info("find page\n");
+                //pr_info("find page\n");
 
                 page = find_get_page(mapping, index);
                 //ClearPageUptodate(page);
@@ -1213,7 +1213,7 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	//pr_info("**********index is %d last index is %d offset is %d count is %d", index, last_index, offset, count_test);
 
 
-	pr_info("*****beginning read inode %d page %d", inode->i_ino, index);
+	//pr_info("*****beginning read inode %d page %d", inode->i_ino, index);
 
 	//invalidating the page
 	//callinvalidatepage(inode->i_ino, index, 1);
@@ -1232,7 +1232,7 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 
 	retval = simplefs_generic_file_read_iter(iocb, iter);
 
-   	pr_info("**** reading into vector type %d, length %d ki_flags %d ki_hint %d nr_segs %d ki_pos %d", iter->type, (iter->iov)->iov_len, iocb->ki_flags, iocb->ki_flags, iocb->ki_hint, iter->nr_segs, iocb->ki_pos);
+   	//pr_info("**** reading into vector type %d, length %d ki_flags %d ki_hint %d nr_segs %d ki_pos %d", iter->type, (iter->iov)->iov_len, iocb->ki_flags, iocb->ki_flags, iocb->ki_hint, iter->nr_segs, iocb->ki_pos);
 
 	//**** reading into vector type 0, length 8192 ki_flags 0 ki_hint 0 nr_segs 0 ki_pos 1
 
@@ -1315,18 +1315,18 @@ ssize_t simplefs_file_write_iter(struct kiocb *iocb, struct iov_iter *from) {
 u64 shmem_address_check(void *addr, unsigned long size)
 {
 
-    pr_info("tesing shmem address callback");
-    pr_info("tesing shmem address callback");
-    pr_info("tesing shmem address callback");
-    pr_info("tesing shmem address callback");
-    pr_info("tesing shmem address callback");
+    //pr_info("tesing shmem address callback");
+    //pr_info("tesing shmem address callback");
+    //pr_info("tesing shmem address callback");
+    //pr_info("tesing shmem address callback");
+    //pr_info("tesing shmem address callback");
     struct  shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
     if(coherence_state != NULL){
-	    pr_info("shmem was in hash table");
-	    pr_info("shmem address %ld", coherence_state->shmem_addr);
-	    pr_info("shmem i_ino %d", coherence_state->i_ino);
-	    pr_info("shmem pagenum %d", coherence_state->pagenum);
-	    pr_info("shmem coherence state %d", coherence_state->state);
+	    //pr_info("shmem was in hash table");
+	    //pr_info("shmem address %ld", coherence_state->shmem_addr);
+	    //pr_info("shmem i_ino %d", coherence_state->i_ino);
+	    //pr_info("shmem pagenum %d", coherence_state->pagenum);
+	    //pr_info("shmem coherence state %d", coherence_state->state);
 	    return 1;
     }else{
 	    pr_info("shmem was not in the hashtable");
@@ -1365,13 +1365,13 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         //copy data into dummy buffer, and send to switch
         simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
 
-        for(i = 0; i < 20; i++){
-                pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
-        }
+        //for(i = 0; i < 20; i++){
+       //         pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
+       // }
 
 
         spin_lock(ptl_ptr);
-	pr_info("inside ptl_ptr lock");
+	//pr_info("inside ptl_ptr lock");
 
 	struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
         struct cnthread_inv_msg_ctx *inv_ctx = &((struct cnthread_inv_argv *)inv_argv)->inv_ctx;
@@ -1381,24 +1381,24 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
         *((u32 *)(&(inv_ctx->inval_buf[CACHELINE_ROCE_VOFFSET_TO_IP]))) = rdma_ctx->ip_val;
 
-	pr_info("inv_ctx->original_qp %d", inv_ctx->original_qp);
+	//pr_info("inv_ctx->original_qp %d", inv_ctx->original_qp);
 	
 	u32 req_qp = (get_id_from_requester(inv_ctx->rdma_ctx.requester) * DISAGG_QP_PER_COMPUTE) + inv_ctx->original_qp;
-        pr_info("req_qp %d", req_qp);
+        //pr_info("req_qp %d", req_qp);
 	
-	pr_info("before cn_copy_page");
+	//pr_info("before cn_copy_page");
 	cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
         temppte, CN_TARGET_PAGE, req_qp, buf);
-        pr_info("after cn_copy_page");
+        //pr_info("after cn_copy_page");
 	
-	pr_info("before inval ack");
-	pr_info("inv_ctx->inval_buf %d", inv_ctx->inval_buf);
+	//pr_info("before inval ack");
+	//pr_info("inv_ctx->inval_buf %d", inv_ctx->inval_buf);
         _cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
-        pr_info("after inval ack");
+        //pr_info("after inval ack");
         
-	pr_info("before FinACK");
+	//pr_info("before FinACK");
         cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
-        pr_info("after FinACK");
+        //pr_info("after FinACK");
 	
 	spin_unlock(ptl_ptr);
 	spin_unlock(&dummy_page_lock);
@@ -1432,10 +1432,10 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		struct page * testp = pagep;
 		
 		//perform page invalidation stuff here
-		pr_info("shmem_invalidate_page start");
+		//pr_info("shmem_invalidate_page start");
 		shmem_invalidate_page_write(coherence_state->mapping, testp, inv_argv);
 
-		pr_info("shmem_invalidate_page end");
+		//pr_info("shmem_invalidate_page end");
 
 		ClearPageUptodate(testp);
 	}else{
@@ -1456,18 +1456,18 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 
 u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
-    pr_info("testing invalidate page callback %ld", addr);
-    pr_info("testing invalidate page callback %ld", addr);
-    pr_info("testing invalidate page callback %ld", addr);
-    pr_info("testing invalidate page callback %ld", addr);
+    //pr_info("testing invalidate page callback %ld", addr);
+    //pr_info("testing invalidate page callback %ld", addr);
+    //pr_info("testing invalidate page callback %ld", addr);
+   // pr_info("testing invalidate page callback %ld", addr);
    
     struct shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
     if(coherence_state != NULL){
-	    pr_info("shmem was in hash table");
-	    pr_info("shmem address %ld", coherence_state->shmem_addr);
-	    pr_info("shmem i_ino %d", coherence_state->i_ino);
-	    pr_info("shmem pagenum %d", coherence_state->pagenum);
-	    pr_info("shmem coherence state %d", coherence_state->state);
+	    //pr_info("shmem was in hash table");
+	    //pr_info("shmem address %ld", coherence_state->shmem_addr);
+	    //pr_info("shmem i_ino %d", coherence_state->i_ino);
+	    //pr_info("shmem pagenum %d", coherence_state->pagenum);
+	    //pr_info("shmem coherence state %d", coherence_state->state);
 	    shmem_invalidate(coherence_state, inv_argv);
 
 
