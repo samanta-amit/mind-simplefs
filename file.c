@@ -1246,7 +1246,7 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	/*      ~*~       */
 	inode_unlock(inode);
 	/*      ~*~       */
-	pr_info("****ending read");
+	//pr_info("****ending read");
 	return retval;
 
 }
@@ -1329,7 +1329,7 @@ u64 shmem_address_check(void *addr, unsigned long size)
 	    //pr_info("shmem coherence state %d", coherence_state->state);
 	    return 1;
     }else{
-	    pr_info("shmem was not in the hashtable");
+	    //pr_info("shmem was not in the hashtable");
     }
     return 0;
 }
@@ -1439,7 +1439,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 
 		ClearPageUptodate(testp);
 	}else{
-		pr_info("page no longer in page cache");
+		//pr_info("page no longer in page cache");
 	}
 
 	//delete page from the hashmap
@@ -1472,7 +1472,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 
 
     }else{
-	    pr_info("page no longer in hash table");
+	    //pr_info("page no longer in hash table");
 
     }
     return 1024;
