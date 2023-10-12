@@ -514,7 +514,7 @@ static void performcoherence(struct inode * inode, int page, struct address_spac
 
     }else{
 	if(temp->state >= reqstate){
-		pr_info("page number %d had sufficient state", page);	
+		//pr_info("page number %d had sufficient state", page);	
 	}else{
 		pr_info("page number %d had INsufficient state", page);	
 		//TODO switch communication would occur here
@@ -918,7 +918,7 @@ find_page:
 
 
                 if (!page) {
-                        pr_info("no page found from findgetpage\n");
+                        //pr_info("no page found from findgetpage\n");
                         if (iocb->ki_flags & IOCB_NOWAIT)
                                 goto would_block;
                         page_cache_sync_readahead(mapping,
@@ -928,16 +928,16 @@ find_page:
                         if (unlikely(page == NULL))
                                 goto no_cached_page;
                 }
-                pr_info("page found is %d\n", page);
+                //pr_info("page found is %d\n", page);
                 if (PageReadahead(page)) {
                         page_cache_async_readahead(mapping,
                                         ra, filp, page,
                                         index, last_index - index);
-                        pr_info("sync readahead\n");
+                        //pr_info("sync readahead\n");
 
                 }
                 if (!PageUptodate(page)) {
-                        pr_info("page not up to date\n");
+                        //pr_info("page not up to date\n");
                         if (iocb->ki_flags & IOCB_NOWAIT) {
                                 put_page(page);
                                 goto would_block;
@@ -970,9 +970,9 @@ find_page:
                                 goto page_not_up_to_date_locked;
                         unlock_page(page);
                 }
-                pr_info("page was marked up to date\n");
+                //pr_info("page was marked up to date\n");
 page_ok:
-                pr_info("page_ok \n");
+                //pr_info("page_ok \n");
                 /*
                  * i_size must be checked after we know the page is Uptodate.
                  *
@@ -985,7 +985,7 @@ page_ok:
                 isize = i_size_read(inode);
                 end_index = (isize - 1) >> PAGE_SHIFT;
                 if (unlikely(!isize || index > end_index)) {
-                        pr_info("size difference\n");
+                        //pr_info("size difference\n");
                         put_page(page);
                         goto out;
                 }
@@ -996,7 +996,7 @@ page_ok:
 
                         nr = ((isize - 1) & ~PAGE_MASK) + 1; //inode size (8kb? - 1)
                         if (nr <= offset) { //if nr <= offset into page
-                                pr_info("offset not right nr was %d offset %d isize %d\n", nr, offset, isize);
+                                //pr_info("offset not right nr was %d offset %d isize %d\n", nr, offset, isize);
                                 put_page(page);
                                 goto out;
                         }
@@ -1022,7 +1022,7 @@ page_ok:
                  * Ok, we have the page, and it's up-to-date, so
                  * now we can copy it to user space...
                  */
-                pr_info("data being copied to page here \n");
+                //pr_info("data being copied to page here \n");
                 ret = copy_page_to_iter(page, offset, nr, iter);
                 offset += ret;
                 index += offset >> PAGE_SHIFT;
@@ -1040,14 +1040,14 @@ page_ok:
                 continue;
 
 page_not_up_to_date:
-                pr_info("page not up to date\n");
+                //pr_info("page not up to date\n");
                 /* Get exclusive access to the page ... */
                 error = lock_page_killable(page);
                 if (unlikely(error))
                         goto readpage_error;
 
 page_not_up_to_date_locked:
-                pr_info("page not up to date locked\n");
+                //pr_info("page not up to date locked\n");
                 /* Did it get truncated before we got the lock? */
                 if (!page->mapping) {
                         unlock_page(page);
@@ -1070,18 +1070,18 @@ readpage:
                 ClearPageError(page);
                 /* Start the actual read. The read will unlock the page. */
                 error = mapping->a_ops->readpage(filp, page);
-                pr_info("after readpage called \n");
-                pr_info("going to page_ok\n");
+                //pr_info("after readpage called \n");
+                //pr_info("going to page_ok\n");
                 goto page_ok;
 
 readpage_error:
-                pr_info("read page error \n");
+                //pr_info("read page error \n");
                 /* UHHUH! A synchronous read error occurred. Report it */
                 put_page(page);
                 goto out;
 
 no_cached_page:
-                pr_info("no cached page \n");
+                //pr_info("no cached page \n");
                 /*
                  * Ok, it wasn't cached, so we need to create a new
                  * page..
@@ -1105,7 +1105,7 @@ no_cached_page:
         }
 
 would_block:
-        pr_info("would_block\n");
+        //pr_info("would_block\n");
         error = -EAGAIN;
 out:
         ra->prev_pos = prev_index;
@@ -1114,7 +1114,7 @@ out:
 
         *ppos = ((loff_t)index << PAGE_SHIFT) + offset;
         file_accessed(filp);
-        pr_info("leaving generic_file_buffered_read\n");
+        //pr_info("leaving generic_file_buffered_read\n");
         return written ? written : error;
 }
 
@@ -1188,7 +1188,7 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	int pageindex;
 
 
-	pr_info("read ki_pos %d", iocb->ki_pos);
+	//pr_info("read ki_pos %d", iocb->ki_pos);
 
 
 	//pr_info("read ki_pos %d", iocb->ki_pos);
