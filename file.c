@@ -1447,7 +1447,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 
 	spin_unlock_irq(&mapping->tree_lock);
 	spin_unlock(&page_states_lock);
-
+        spin_unlock(&shmem_states_lock);
 
 	return true;
 
