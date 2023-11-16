@@ -55,7 +55,7 @@ DEFINE_SPINLOCK(page_states_lock);
 // thread migrations from causing races to the buffers.
 DEFINE_SPINLOCK(dummy_page_lock);
 
-
+static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 
 
 
@@ -215,6 +215,8 @@ static int mind_fetch_page(
 	int r;
 	unsigned long start_time = jiffies;
 
+	spin_lock(&dummy_page_lock);
+	
 	ret_buf.data_size = PAGE_SIZE;
 	ret_buf.data = page_dma_address;
 
@@ -224,11 +226,13 @@ static int mind_fetch_page(
 	wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
 	BUG_ON(!wait_node);
 
-	mind_pr_cache_dir_state(
-		"BEFORFE PFAULT ACK/NACK",
-		start_time, shmem_address,
-		atomic_read(&wait_node->ack_counter),
-		atomic_read(&wait_node->target_counter));
+	spin_unlock(&dummy_page_lock);
+
+	//mind_pr_cache_dir_state(
+	//	"BEFORFE PFAULT ACK/NACK",
+	//	start_time, shmem_address,
+	//	atomic_read(&wait_node->ack_counter),
+	//	atomic_read(&wait_node->target_counter));
 
 	BUG_ON(!is_kshmem_address(shmem_address));
 	// NULL struct task_struct* is okay here because
@@ -243,11 +247,11 @@ static int mind_fetch_page(
 		cancel_waiting_for_nack(wait_node);
 	r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
-	mind_pr_cache_dir_state(
-		"AFTER PFAULT ACK/NACK",
-		start_time, shmem_address,
-		atomic_read(&wait_node->ack_counter),
-		atomic_read(&wait_node->target_counter));
+	//mind_pr_cache_dir_state(
+	//	"AFTER PFAULT ACK/NACK",
+	//	start_time, shmem_address,
+	//	atomic_read(&wait_node->ack_counter),
+	//	atomic_read(&wait_node->target_counter));
 	
 	data_size = ret_buf.data_size;
 	return 0;
@@ -261,6 +265,8 @@ static int mind_fetch_page_write(
         int r;
         unsigned long start_time = jiffies;
 
+	spin_lock(&dummy_page_lock);
+
         ret_buf.data_size = PAGE_SIZE;
         ret_buf.data = page_dma_address;
 
@@ -269,12 +275,14 @@ static int mind_fetch_page_write(
 
         wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
         BUG_ON(!wait_node);
+        
+	spin_unlock(&dummy_page_lock);
 
-        mind_pr_cache_dir_state(
-                "BEFORFE PFAULT ACK/NACK",
-                start_time, shmem_address,
-                atomic_read(&wait_node->ack_counter),
-                atomic_read(&wait_node->target_counter));
+        //mind_pr_cache_dir_state(
+        //        "BEFORFE PFAULT ACK/NACK",
+        //        start_time, shmem_address,
+        //        atomic_read(&wait_node->ack_counter),
+        //        atomic_read(&wait_node->target_counter));
 
         BUG_ON(!is_kshmem_address(shmem_address));
         // NULL struct task_struct* is okay here because
@@ -289,11 +297,11 @@ static int mind_fetch_page_write(
                 cancel_waiting_for_nack(wait_node);
         r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
-        mind_pr_cache_dir_state(
-                "AFTER PFAULT ACK/NACK",
-                start_time, shmem_address,
-                atomic_read(&wait_node->ack_counter),
-                atomic_read(&wait_node->target_counter));
+        //mind_pr_cache_dir_state(
+        //        "AFTER PFAULT ACK/NACK",
+        //        start_time, shmem_address,
+        //        atomic_read(&wait_node->ack_counter),
+        //        atomic_read(&wait_node->target_counter));
 
         data_size = ret_buf.data_size;
         return 0;
@@ -388,8 +396,10 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
         const struct address_space *mapping = file->f_mapping;
 
         inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (pagep->index));
-
-        spin_lock(&dummy_page_lock);
+        
+	int cpu_id = get_cpu();
+	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+        //spin_lock(&dummy_page_lock);
        	pr_info("invalidate_page_write 3");
 
         size_t data_size;
@@ -422,9 +432,10 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
         //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
         // spin_unlock(ptl_ptr);
-        spin_unlock(&dummy_page_lock);
-
-        //spin_unlock_irq(&mapping->tree_lock);
+        //spin_unlock(&dummy_page_lock);
+        spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+        
+	//spin_unlock_irq(&mapping->tree_lock);
 
         return true;
 }
@@ -1350,7 +1361,10 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 	int i;
         inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (pagep->index));
 
-        spin_lock(&dummy_page_lock);
+	int cpu_id = get_cpu();
+
+        //spin_lock(&dummy_page_lock);
+	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
        
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(get_cpu());
@@ -1401,7 +1415,8 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         pr_info("after FinACK");
 	
 	spin_unlock(ptl_ptr);
-	spin_unlock(&dummy_page_lock);
+	//spin_unlock(&dummy_page_lock);
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 
 	//spin_unlock_irq(&mapping->tree_lock);
 	return true;
