@@ -602,7 +602,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	pr_info("readpage ino %ld page %ld", mapping->host->i_ino, page->index);
 
 	// Set up this ino/page offset in page_states if needed.
-	performcoherence(mapping->host, page->index, mapping, 2);
+	//performcoherence(mapping->host, page->index, mapping, 2);
 
 	bh.b_state = 0;
 	bh.b_size = 1;
@@ -678,7 +678,7 @@ static int simplefs_write_begin(struct file *file,
     //actual page since it causes null dereference stuff
     //
     //TODO perform coherence on multiple pages
-    performcoherence(inode, currentpage, mapping, 2);
+    //performcoherence(inode, currentpage, mapping, 2);
 
 
     struct simplefs_sb_info *sbi = SIMPLEFS_SB(file->f_inode->i_sb);
@@ -1384,8 +1384,8 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         }
 
 
-        spin_lock(ptl_ptr);
-	pr_info("inside ptl_ptr lock");
+        //spin_lock(ptl_ptr);
+	//pr_info("inside ptl_ptr lock");
 
 	struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
         struct cnthread_inv_msg_ctx *inv_ctx = &((struct cnthread_inv_argv *)inv_argv)->inv_ctx;
@@ -1414,7 +1414,7 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
         pr_info("after FinACK");
 	
-	spin_unlock(ptl_ptr);
+	//spin_unlock(ptl_ptr);
 	//spin_unlock(&dummy_page_lock);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 
@@ -1432,7 +1432,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 
 	//lock hashtable	
 	spin_lock(&shmem_states_lock);
-
+        spin_lock(&page_states_lock);
 	//lock page tree
 	spin_lock_irq(&mapping->tree_lock);
 
