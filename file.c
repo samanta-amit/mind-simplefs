@@ -55,9 +55,7 @@ DEFINE_SPINLOCK(page_states_lock);
 // thread migrations from causing races to the buffers.
 DEFINE_SPINLOCK(dummy_page_lock);
 
-
-
-
+static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 
 
 struct shmem_coherence_state {
@@ -215,6 +213,8 @@ static int mind_fetch_page(
 	int r;
 	unsigned long start_time = jiffies;
 
+	spin_lock(&dummy_page_lock);
+
 	ret_buf.data_size = PAGE_SIZE;
 	ret_buf.data = page_dma_address;
 
@@ -224,11 +224,13 @@ static int mind_fetch_page(
 	wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
 	BUG_ON(!wait_node);
 
-	mind_pr_cache_dir_state(
-		"BEFORFE PFAULT ACK/NACK",
-		start_time, shmem_address,
-		atomic_read(&wait_node->ack_counter),
-		atomic_read(&wait_node->target_counter));
+	spin_unlock(&dummy_page_lock);
+
+	//mind_pr_cache_dir_state(
+	//	"BEFORFE PFAULT ACK/NACK",
+	//	start_time, shmem_address,
+	//	atomic_read(&wait_node->ack_counter),
+	//	atomic_read(&wait_node->target_counter));
 
 	BUG_ON(!is_kshmem_address(shmem_address));
 	// NULL struct task_struct* is okay here because
@@ -243,11 +245,11 @@ static int mind_fetch_page(
 		cancel_waiting_for_nack(wait_node);
 	r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
-	mind_pr_cache_dir_state(
-		"AFTER PFAULT ACK/NACK",
-		start_time, shmem_address,
-		atomic_read(&wait_node->ack_counter),
-		atomic_read(&wait_node->target_counter));
+	//mind_pr_cache_dir_state(
+	//	"AFTER PFAULT ACK/NACK",
+	//	start_time, shmem_address,
+	//	atomic_read(&wait_node->ack_counter),
+	//	atomic_read(&wait_node->target_counter));
 	
 	data_size = ret_buf.data_size;
 	return 0;
@@ -261,6 +263,8 @@ static int mind_fetch_page_write(
         int r;
         unsigned long start_time = jiffies;
 
+	spin_lock(&dummy_page_lock);
+
         ret_buf.data_size = PAGE_SIZE;
         ret_buf.data = page_dma_address;
 
@@ -269,12 +273,14 @@ static int mind_fetch_page_write(
 
         wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
         BUG_ON(!wait_node);
+	
+	spin_unlock(&dummy_page_lock);
 
-        mind_pr_cache_dir_state(
-                "BEFORFE PFAULT ACK/NACK",
-                start_time, shmem_address,
-                atomic_read(&wait_node->ack_counter),
-                atomic_read(&wait_node->target_counter));
+        //mind_pr_cache_dir_state(
+        //        "BEFORFE PFAULT ACK/NACK",
+        //        start_time, shmem_address,
+        //        atomic_read(&wait_node->ack_counter),
+        //        atomic_read(&wait_node->target_counter));
 
         BUG_ON(!is_kshmem_address(shmem_address));
         // NULL struct task_struct* is okay here because
@@ -289,11 +295,11 @@ static int mind_fetch_page_write(
                 cancel_waiting_for_nack(wait_node);
         r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
-        mind_pr_cache_dir_state(
-                "AFTER PFAULT ACK/NACK",
-                start_time, shmem_address,
-                atomic_read(&wait_node->ack_counter),
-                atomic_read(&wait_node->target_counter));
+        //mind_pr_cache_dir_state(
+        //        "AFTER PFAULT ACK/NACK",
+        //        start_time, shmem_address,
+        //        atomic_read(&wait_node->ack_counter),
+        //        atomic_read(&wait_node->target_counter));
 
         data_size = ret_buf.data_size;
         return 0;
@@ -389,7 +395,10 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
 
         inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (pagep->index));
 
-        spin_lock(&dummy_page_lock);
+	int cpu_id = get_cpu();
+	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        //spin_lock(&dummy_page_lock);
        	//pr_info("invalidate_page_write 3");
 
         size_t data_size;
@@ -422,7 +431,8 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
         //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
         // spin_unlock(ptl_ptr);
-        spin_unlock(&dummy_page_lock);
+        //spin_unlock(&dummy_page_lock);
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         //spin_unlock_irq(&mapping->tree_lock);
 
@@ -591,7 +601,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	//pr_info("readpage ino %ld page %ld", mapping->host->i_ino, page->index);
 
 	// Set up this ino/page offset in page_states if needed.
-	performcoherence(mapping->host, page->index, mapping, 2);
+	//performcoherence(mapping->host, page->index, mapping, 2);
 
 	bh.b_state = 0;
 	bh.b_size = 1;
@@ -667,7 +677,7 @@ static int simplefs_write_begin(struct file *file,
     //actual page since it causes null dereference stuff
     //
     //TODO perform coherence on multiple pages
-    performcoherence(inode, currentpage, mapping, 2);
+    //performcoherence(inode, currentpage, mapping, 2);
 
 
     struct simplefs_sb_info *sbi = SIMPLEFS_SB(file->f_inode->i_sb);
@@ -1349,9 +1359,12 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         loff_t test = 20; 
 	int i;
         inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (pagep->index));
+	
+	int cpu_id = get_cpu();
 
-        spin_lock(&dummy_page_lock);
-       
+        //spin_lock(&dummy_page_lock);
+        spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(get_cpu());
         //r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
@@ -1366,11 +1379,11 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
 
         //for(i = 0; i < 20; i++){
-       //         pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
-       // }
+        //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
+        //}
 
 
-        spin_lock(ptl_ptr);
+        //spin_lock(ptl_ptr);
 	//pr_info("inside ptl_ptr lock");
 
 	struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
@@ -1400,8 +1413,9 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
         //pr_info("after FinACK");
 	
-	spin_unlock(ptl_ptr);
-	spin_unlock(&dummy_page_lock);
+	//spin_unlock(ptl_ptr);
+	//spin_unlock(&dummy_page_lock);
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 
 	//spin_unlock_irq(&mapping->tree_lock);
 	return true;
@@ -1417,6 +1431,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 
 	//lock hashtable	
 	spin_lock(&shmem_states_lock);
+        spin_lock(&page_states_lock);
 
 	//lock page tree
 	spin_lock_irq(&mapping->tree_lock);
