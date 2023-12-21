@@ -147,7 +147,8 @@ static int mind_fetch_page(
 	int r;
 	unsigned long start_time = jiffies;
 
-	spin_lock(&dummy_page_lock);
+	///removed since it was acquired in readpage
+	//spin_lock(&dummy_page_lock);
 
 	ret_buf.data_size = PAGE_SIZE;
 	ret_buf.data = page_dma_address;
@@ -158,7 +159,7 @@ static int mind_fetch_page(
 	wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
 	BUG_ON(!wait_node);
 
-	spin_unlock(&dummy_page_lock);
+	//spin_unlock(&dummy_page_lock);
 
 	//mind_pr_cache_dir_state(
 	//	"BEFORFE PFAULT ACK/NACK",
