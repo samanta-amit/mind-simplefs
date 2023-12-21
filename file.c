@@ -408,7 +408,7 @@ static void update_coherence(struct inode * inode, int page, struct address_spac
     inode_pages_address = shmem_address[inode->i_ino] +
 	    (PAGE_SIZE * (page));
 
-
+	pr_info("update coherence called");
     //TODO add hashtable locks
 
     //TODO at the moment shmem_in_hashmap acquires the locks, we might just 
@@ -419,7 +419,11 @@ static void update_coherence(struct inode * inode, int page, struct address_spac
     if(coherence_state == NULL){
         //page not in hashmap
         hash_shmem(inode_pages_address, mapping->host->i_ino, page, mapping, reqstate);
+	pr_info("page not in hashmap adding with state %c", reqstate);
+
     }else{
+	pr_info("page in hashmap, updating state %c", reqstate);
+
 	    if(coherence_state->state == WRITE){
 		    return;
 	    }else{
@@ -494,7 +498,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 
 	const struct address_space *mapping = file->f_mapping;
 
-	//pr_info("readpage ino %ld page %ld", mapping->host->i_ino, page->index);
+	pr_info("readpage ino %ld page %ld", mapping->host->i_ino, page->index);
     //TODO insert into shmem_states
 
 	bh.b_state = 0;
@@ -1252,6 +1256,7 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 
 static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, void *inv_argv){
 
+	pr_info("shmem invalidate");
 	void *pagep;
 	struct address_space *mapping = coherence_state->mapping;
 
@@ -1295,11 +1300,14 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 
 u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
+	pr_info("invalidate page callback called");
        struct shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
     if(coherence_state != NULL){
 	  shmem_invalidate(coherence_state, inv_argv);
+	pr_info("page was found");
+
     }else{
-	    //pr_info("page no longer in hash table");
+	    pr_info("page no longer in hash table");
     }
     return 1024;
 }
