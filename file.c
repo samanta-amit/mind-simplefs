@@ -30,30 +30,20 @@
 #include "simplefs.h"
 
 // "MSI" coherence states tracked by this FS's coherence scheme.
+/*
 enum coherence_state {
 	CO_I = 0, // Invalid state; such pages may not be accessed at local CN.
 	CO_S = 0, // Shared state; page is readable at the local CN.
 	CO_M = 0, // Modifiest state; page is modifable at local CN.
-};
-
-// For (inode number, page number in that inode), tracks coherence state.
-struct page_coherence_state {
-	unsigned long i_ino;
-	int pagenum;
-	enum coherence_state state;
-	struct address_space *mapping;
-	struct hlist_node link;
-};
-
-// Maps (inode number, page offset) -> MSI coherence state.
-DEFINE_HASHTABLE(page_states, 8); // 8 = 256 buckets
-// Protects page_states and everything it references.
-DEFINE_SPINLOCK(page_states_lock);
+};*/
 
 // Ensures no two threads attempt to use the same dummy buffer at the same time.
 // Each dummy buffer is per-core, but this prevents context switches and
 // thread migrations from causing races to the buffers.
 DEFINE_SPINLOCK(dummy_page_lock);
+
+#define READ 1
+#define WRITE 2
 
 static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 
@@ -62,7 +52,7 @@ struct shmem_coherence_state {
     	unsigned long shmem_addr;
 	unsigned long i_ino;
 	int pagenum;
-	enum coherence_state state;
+	int state;
 	struct address_space *mapping;
 	struct hlist_node link;
 };
@@ -70,7 +60,7 @@ struct shmem_coherence_state {
 
 
 DEFINE_HASHTABLE(shmem_states, 8); // 8 = 256 buckets
-// Protects page_states and everything it references.
+// Protects shmem_states and everything it references.
 DEFINE_SPINLOCK(shmem_states_lock);
 
 static void hash_shmem(unsigned long shmem_addr, int inodenum, int pagenum, struct address_space *mapping, int state) {
@@ -119,66 +109,10 @@ static struct shmem_coherence_state * shmem_in_hashmap(unsigned long shmem_addr)
 }
 
 
-
-
-
-
-
-
-
 extern unsigned long shmem_address[10];
 
-//adds page to inode hashmap, assuming inode hashmap is 
-//already defined as above. Given an inode number, page number, mapping and state
-//this will add to the hash table hashed on the inode number
-//this means that at the moment it is basically indexed on inodes
-//and then a linked list of pages from that inode
-//there is currently not a 2D hashtable 
-static void hash_inode_page(int inodenum, int pagenum, struct address_space *mapping, int state) {
-	struct page_coherence_state *page_state;
-	//pr_info("adding inode %d page %d to hash", inodenum, pagenum);
-	//malloc an inode item and add it to the hashmap	
-	//
-	//refer more to Documentation/kernel-hacking/hacking.rst
-	page_state = kmalloc(sizeof(struct page_coherence_state), GFP_KERNEL);
-	page_state->i_ino = inodenum;
-	page_state->pagenum = pagenum;
-	page_state->mapping = mapping;
-	page_state->state = state;
 
-	spin_lock(&page_states_lock);
-	hash_add(page_states, &(page_state->link), inodenum);
-	spin_unlock(&page_states_lock);
-}
 
-//https://kernelnewbies.org/FAQ/Hashtables
-//returns page_coherence_state if the page is in the hashmap
-//checks the index for the inode number, and then iterates
-//through the list of all the inode/page combos that end up 
-//in the same bucket.
-static struct page_coherence_state * pageinhashmap(unsigned long i_ino, int pagenum) {
-	struct page_coherence_state *tempinode;
-	int i = i_ino;
-
-	//TODO make sure that page is still valid, and hasn't been removed from cache
-
-	//locking the spin lock
-	spin_lock(&page_states_lock);
-
-	hash_for_each(page_states, i, tempinode, link) {
-		if(tempinode->i_ino == i_ino && tempinode->pagenum == pagenum){
-			//unlocking the spin lock
-			spin_unlock(&page_states_lock);
-			return tempinode; //current;
-		}
-	}	
-
-	//unlocking the spin lock
-	spin_unlock(&page_states_lock);
-
-	return NULL; //NULL;
-
-}
 
 static void mind_pr_cache_dir_state(const char* msg,
 	unsigned long start_time, uintptr_t shmem_address,
@@ -375,73 +309,6 @@ ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t co
         return result;
 }
 
-
-static bool invalidate_page_write(struct file *file, struct inode * inode, struct page * pagep){
-
-	//pr_info("invalidate_page_write 1");
-        struct page * testp = pagep;
-        uintptr_t inode_pages_address;
-        int r;
-        struct mm_struct *mm;
-        mm = get_init_mm();
-        spinlock_t *ptl_ptr = NULL;
-        pte_t *temppte;
-        void *ptrdummy;
-        static struct cnthread_inv_msg_ctx send_ctx;
-        loff_t test = 20; 
-	//pr_info("invalidate_page_write 2");
-
-        const struct address_space *mapping = file->f_mapping;
-
-        inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (pagep->index));
-
-	int cpu_id = get_cpu();
-	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
-
-        //spin_lock(&dummy_page_lock);
-       	//pr_info("invalidate_page_write 3");
-
-        size_t data_size;
-        void *buf = get_dummy_page_dma_addr(get_cpu());
-        r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
-        BUG_ON(r);
-
-        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
-
-        ptrdummy = get_dummy_page_buf_addr(get_cpu());
-	//pr_info("invalidate_page_write 4");
-
-        //writes data to that page
-        //copy data into dummy buffer, and send to switch
-        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
-        
-	//int i;
-        //for(i = 0; i < 20; i++){
-        //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
-        //}
-
-	//pr_info("invalidate_page_write 5");
-
-        //spin_lock(ptl_ptr);
-
-        //cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
-        //temppte, CN_OTHER_PAGE, 0, buf);
-        //pr_info("invalidate_page_write 6");
-
-        //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
-
-        // spin_unlock(ptl_ptr);
-        //spin_unlock(&dummy_page_lock);
-	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-
-        //spin_unlock_irq(&mapping->tree_lock);
-
-        return true;
-}
-
-
-
-
 /*
  * Map the buffer_head passed in argument with the iblock-th block of the file
  * represented by inode. If the requested block is not allocated and create is
@@ -512,25 +379,54 @@ brelse_index:
 
 
 
+static int check_coherence(struct inode * inode, int page, struct address_space * mapping, int reqstate) {
+    uintptr_t inode_pages_address;
+    inode_pages_address = shmem_address[inode->i_ino] +
+	    (PAGE_SIZE * (page));
+
+    //TODO add hashtable locks
+
+    struct shmem_coherence_state * coherence_state = shmem_in_hashmap(inode_pages_address);
+    if(coherence_state == NULL){
+	return 0;
+    }else{
+        if(coherence_state->state == WRITE){
+            return 1; 
+        }else if(coherence_state->state == READ && reqstate == WRITE){
+            return 0;        
+	}
+    }
+	return 0;
+}
+
+
 //this is just a simple function that checks the state of the page in the 
 //hash table this would be called on page reads and communicate with 
 //the switch if the state wasn't correct for a page
-static void performcoherence(struct inode * inode, int page, struct address_space * mapping, int reqstate) {
-    struct page_coherence_state * temp = pageinhashmap(inode->i_ino, page);
-    if(temp == NULL){
-	//pr_info("page number %d for inode %ld being added to hashmap", page, inode->i_ino);
-	//if not then add it
-	hash_inode_page(inode->i_ino, page, mapping, 0);
+static void update_coherence(struct inode * inode, int page, struct address_space * mapping, int reqstate) {
+    uintptr_t inode_pages_address;
+    inode_pages_address = shmem_address[inode->i_ino] +
+	    (PAGE_SIZE * (page));
 
+
+    //TODO add hashtable locks
+
+    //TODO at the moment shmem_in_hashmap acquires the locks, we might just 
+    //want to move that lock acquiring to be outside of that function so that
+    //we can have it here so that we can read something from the hashmap and modify
+    //it without another thread messing it up
+    struct shmem_coherence_state * coherence_state = shmem_in_hashmap(inode_pages_address);
+    if(coherence_state == NULL){
+        //page not in hashmap
+        hash_shmem(inode_pages_address, mapping->host->i_ino, page, mapping, reqstate);
     }else{
-	if(temp->state >= reqstate){
-		//pr_info("page number %d had sufficient state", page);	
-	}else{
-		pr_info("page number %d had INsufficient state", page);	
-		//TODO switch communication would occur here
-		temp->state = reqstate;
-	}
-
+	    if(coherence_state->state == WRITE){
+		    return;
+	    }else{
+		    if(reqstate == WRITE){
+			    coherence_state->state = WRITE;
+		    }
+	    }
     }
 } 
 
@@ -599,9 +495,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	const struct address_space *mapping = file->f_mapping;
 
 	//pr_info("readpage ino %ld page %ld", mapping->host->i_ino, page->index);
-
-	// Set up this ino/page offset in page_states if needed.
-	//performcoherence(mapping->host, page->index, mapping, 2);
+    //TODO insert into shmem_states
 
 	bh.b_state = 0;
 	bh.b_size = 1;
@@ -630,7 +524,10 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	BUG_ON(r);
 	
 	simplefs_kernel_page_write(page, get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, 0);
-	//pr_info("read path after page write");
+	
+	//adds page to hashmap if not already in hashmap
+	update_coherence(mapping->host, page->index, mapping, READ);
+
 
 	spin_unlock(&dummy_page_lock);
 	unlock_page(page);
@@ -647,6 +544,71 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 {
     return block_write_full_page(page, simplefs_file_get_block, wbc);
 }
+
+
+static bool invalidate_page_write(struct file *file, struct inode * inode, struct page * pagep){
+
+	//pr_info("invalidate_page_write 1");
+        struct page * testp = pagep;
+        uintptr_t inode_pages_address;
+        int r;
+        struct mm_struct *mm;
+        mm = get_init_mm();
+        spinlock_t *ptl_ptr = NULL;
+        pte_t *temppte;
+        void *ptrdummy;
+        static struct cnthread_inv_msg_ctx send_ctx;
+        loff_t test = 20; 
+	//pr_info("invalidate_page_write 2");
+
+        const struct address_space *mapping = file->f_mapping;
+
+        inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (pagep->index));
+
+	int cpu_id = get_cpu();
+	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        //spin_lock(&dummy_page_lock);
+       	//pr_info("invalidate_page_write 3");
+
+        size_t data_size;
+        void *buf = get_dummy_page_dma_addr(get_cpu());
+        r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+        BUG_ON(r);
+
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+
+        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+	//pr_info("invalidate_page_write 4");
+
+        //writes data to that page
+        //copy data into dummy buffer, and send to switch
+        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+        
+	//int i;
+        //for(i = 0; i < 20; i++){
+        //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
+        //}
+
+	//pr_info("invalidate_page_write 5");
+
+        //spin_lock(ptl_ptr);
+
+        //cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        //temppte, CN_OTHER_PAGE, 0, buf);
+        //pr_info("invalidate_page_write 6");
+
+        //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
+
+        // spin_unlock(ptl_ptr);
+        //spin_unlock(&dummy_page_lock);
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        //spin_unlock_irq(&mapping->tree_lock);
+
+        return true;
+}
+
 
 
 /*
@@ -667,7 +629,7 @@ static int simplefs_write_begin(struct file *file,
 
 	    unsigned int currentpage = pos / PAGE_SIZE;
 	    unsigned int lastpage = (pos + len) / PAGE_SIZE;
-    //pr_info("write begin page number %d end page number %d, for inode %ld write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d end page number %d, for inode %ld write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
 
 
     struct inode *inode = file->f_inode;
@@ -676,10 +638,7 @@ static int simplefs_write_begin(struct file *file,
     //need to do the currentpage thing and not pass in the 
     //actual page since it causes null dereference stuff
     //
-    //TODO perform coherence on multiple pages
-    //performcoherence(inode, currentpage, mapping, 2);
-
-
+    
     struct simplefs_sb_info *sbi = SIMPLEFS_SB(file->f_inode->i_sb);
     int err;
     uint32_t nr_allocs = 0;
@@ -725,14 +684,19 @@ static int simplefs_write_end(struct file *file,
     uintptr_t inode_pages_address;
     unsigned int currentpage = pos / PAGE_SIZE;
 
-
+    
     /* Complete the write() */
     int ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
     if (ret < len) {
         pr_err("wrote less than requested.");
-	invalidate_page_write(file, inode, page);
-	inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (page->index));
-        hash_shmem(inode_pages_address, mapping->host->i_ino, page->index, mapping, 1);
+	//TODO perform coherence on multiple pages
+	if(!check_coherence(inode, currentpage, mapping, WRITE)){
+		invalidate_page_write(file, inode, page);
+		update_coherence(inode, currentpage, mapping, WRITE);
+	}
+
+
+        //hash_shmem(inode_pages_address, mapping->host->i_ino, page->index, mapping, 1);
         return ret;
     }
 
@@ -780,97 +744,19 @@ static int simplefs_write_end(struct file *file,
     }
 end:
 
-    invalidate_page_write(file, inode, page);
-    inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (page->index));
-    hash_shmem(inode_pages_address, mapping->host->i_ino, page->index, mapping, 1);
+    //invalidate_page_write(file, inode, page);
+    //inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (page->index));
+    //hash_shmem(inode_pages_address, mapping->host->i_ino, page->index, mapping, 1);
+    //TODO perform coherence on multiple pages
+
+    if(!check_coherence(inode, currentpage, mapping, WRITE)){
+	    invalidate_page_write(file, inode, page);
+	    update_coherence(inode, currentpage, mapping, WRITE);
+    }
+
 
     return ret;
 
-}
-
-
-static ssize_t del_simplefs_sync_read(struct file *filp, char __user *buf, size_t len, loff_t *ppos)
-{
-        struct iovec iov = { .iov_base = buf, .iov_len = len };
-        struct kiocb kiocb;
-        struct iov_iter iter;
-        ssize_t ret;
-
-        init_sync_kiocb(&kiocb, filp);
-        kiocb.ki_pos = *ppos;
-        iov_iter_init(&iter, READ, &iov, 1, len);
-
-	ret = generic_file_read_iter(&kiocb, &iter);
-        BUG_ON(ret == -EIOCBQUEUED);
-        *ppos = kiocb.ki_pos;
-        return ret;
-}
-
-
-//del prefix just stating that this isn't needed anymore
-ssize_t del_simplefs_vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)
-{
-        ssize_t ret;
-
-        if (!(file->f_mode & FMODE_READ))
-                return -EBADF;
-        if (!(file->f_mode & FMODE_CAN_READ))
-                return -EINVAL;
-        if (unlikely(!access_ok(VERIFY_WRITE, buf, count)))
-                return -EFAULT;
-
-	//TODO COMMENTED OUT STUFF THAT ISN'T PUBLIC
-        //ret = rw_verify_area(READ, file, pos, count);
-        //if (!ret) {
-        //        if (count > MAX_RW_COUNT)
-        //                count =  MAX_RW_COUNT;
-                ret = del_simplefs_sync_read(file, buf, count, pos);
-        //        if (ret > 0) {
-        //                fsnotify_access(file);
-        //                add_rchar(current, ret);
-        //        }
-        //        inc_syscr(current);
-        //}
-
-        return ret;
-}
-
-
-//unused modified version of kernel read
-ssize_t simplefs_kernel_read(struct file *file, void *buf, size_t count, loff_t *pos)
-{
-	mm_segment_t old_fs;
-
-        old_fs = get_fs();
-        set_fs(get_ds());
-        /* The cast to a user pointer is valid due to the set_fs() */
-        //result = simplefs_vfs_read(file, (void __user *)buf, count, pos);
-
-
-	//TODO compute the offset, compute the index
-	//TODO I think this should work, but I should 
-	unsigned int index = *pos >> PAGE_SHIFT;
-	unsigned int offset = *pos & ~PAGE_MASK;	
-
-	//create the iov_iter
-	struct iov_iter iter;
-	struct iovec iov = {.iov_base = buf, .iov_len = count};
-	iov_iter_init(&iter, READ, &iov, 1, count);
-
-	//get the inode	(these are both stored in hashtable)
-	struct address_space *mapping = file->f_mapping;
-	struct inode *inode = mapping->host;
-
-	//with the inode 
-	//call find get page 
-	struct page *testpage = find_get_page(mapping, index);
-
-	//copy_page_to_iter takes a page, offset, iov_iter and a size
-	copy_page_to_iter(testpage, offset, count, &iter);
-
-
-	set_fs(old_fs);
-        return 0;
 }
 
 
@@ -1261,64 +1147,6 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 
 }
 
-//TODO this is not used at all 
-ssize_t simplefs_file_write_iter(struct kiocb *iocb, struct iov_iter *from) {
-
-
-	//NOTE this stuff is currently handled in
-	//simplefs.h and fs.c in the __init function
-	//struct spinlock *page_states_lock;
-	//spin_lock_init(page_states_lock);
-
-	struct file *file = iocb->ki_filp;
-	struct inode *inode = file->f_mapping->host;
-	ssize_t ret;
-
-	ret = generic_write_checks(iocb, from);
-	if (ret > 0)
-		ret = __generic_file_write_iter(iocb, from);
-
-
-
-	//trying to push a read operation in 
-	//struct kiocb * readkiocb = kiocb_builder(file, 1);
-	//struct iov_iter * readiter = iov_iter_builder(0, 0, 0, 8192);
-	//simplefs_file_read_iter(readkiocb, readiter);
-	//using simplefs one causes deadlock
-	//generic_file_read_iter(readkiocb, readiter);
-	//generic_file_read_iter(iocb, from);
-
-
-
-	int len = 100;
-
-	//TODO I NEED TO FREE THIS AND THE OTHER STUFF I ALLOC AS WELL
-	//TODO THIS PROBABLY ISN'T WORKING BECAUSE IT ISN'T A USERSPACE BUFFER??
-	//READ
-	//stolen from new_sync_read
-	//struct iovec iov = {.iov_base = testbuffer, .iov_len = len};
-	//struct kiocb kiocb;
-	//struct iov_iter iter;
-	//init_sync_kiocb(&kiocb, file);
-	//kiocb.ki_pos = 0;//does this work?
-	//iov_iter_init(&iter, READ, &iov, 1, len);
-	//generic_file_read_iter(&kiocb, &iter);
-	//int i;
-	//char * base = ((readiter->iov)->iov_base);
-	//char * base = ((&iter)->iov)->iov_base;
-
-	//TODO for some reason this had to be after the write
-	//probably because we don't do null checks
-	//this isn't a great place for this though
-
-	if (ret > 0)
-		ret = generic_write_sync(iocb, ret);
-
-	return ret;
-
-}
-
-
 
 
 
@@ -1343,6 +1171,7 @@ u64 shmem_address_check(void *addr, unsigned long size)
     }
     return 0;
 }
+
 
 
 static bool shmem_invalidate_page_write(struct address_space * mapping, struct page * pagep, void *inv_argv){
@@ -1421,9 +1250,6 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 	return true;
 }
 
-
-
-
 static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, void *inv_argv){
 
 	void *pagep;
@@ -1431,7 +1257,6 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 
 	//lock hashtable	
 	spin_lock(&shmem_states_lock);
-        spin_lock(&page_states_lock);
 
 	//lock page tree
 	spin_lock_irq(&mapping->tree_lock);
@@ -1461,7 +1286,6 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 	hash_del(&(coherence_state->link));
 
 	spin_unlock_irq(&mapping->tree_lock);
-	spin_unlock(&page_states_lock);
         spin_unlock(&shmem_states_lock);
 
 	return true;
@@ -1471,24 +1295,11 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 
 u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
-    //pr_info("testing invalidate page callback %ld", addr);
-    //pr_info("testing invalidate page callback %ld", addr);
-    //pr_info("testing invalidate page callback %ld", addr);
-   // pr_info("testing invalidate page callback %ld", addr);
-   
-    struct shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
+       struct shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
     if(coherence_state != NULL){
-	    //pr_info("shmem was in hash table");
-	    //pr_info("shmem address %ld", coherence_state->shmem_addr);
-	    //pr_info("shmem i_ino %d", coherence_state->i_ino);
-	    //pr_info("shmem pagenum %d", coherence_state->pagenum);
-	    //pr_info("shmem coherence state %d", coherence_state->state);
-	    shmem_invalidate(coherence_state, inv_argv);
-
-
+	  shmem_invalidate(coherence_state, inv_argv);
     }else{
 	    //pr_info("page no longer in hash table");
-
     }
     return 1024;
 }
@@ -1508,4 +1319,5 @@ const struct file_operations simplefs_file_ops = {
     .write_iter = generic_file_write_iter,
     .fsync = generic_file_fsync,
 };
+
 
