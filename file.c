@@ -297,13 +297,13 @@ ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t co
 	offset = pos & ~PAGE_MASK;
 
 	//create the iov_iter (from new_sync_read)
-	iov.iov_base = buf;
+        iov.iov_base = buf;
 	iov.iov_len = count; //from new_sync_read
 	iov_iter_init(&iter, READ, &iov, 1, count); //also from new_sync_read
 
 
 	//actually copy the data to the page
-	result = copy_page_from_iter(testpage, 0, count, &iter);
+        result = copy_page_from_iter(testpage, 0, count, &iter);
 
 	set_fs(old_fs);
 
@@ -409,7 +409,7 @@ static void update_coherence(struct inode * inode, int page, struct address_spac
     inode_pages_address = shmem_address[inode->i_ino] +
 	    (PAGE_SIZE * (page));
 
-	pr_info("update coherence called");
+	//pr_info("update coherence called");
     //TODO add hashtable locks
 
     //TODO at the moment shmem_in_hashmap acquires the locks, we might just 
@@ -420,10 +420,10 @@ static void update_coherence(struct inode * inode, int page, struct address_spac
     if(coherence_state == NULL){
         //page not in hashmap
         hash_shmem(inode_pages_address, mapping->host->i_ino, page, mapping, reqstate);
-	pr_info("page not in hashmap adding with state %c", reqstate);
+	//pr_info("page not in hashmap adding with state %c", reqstate);
 
     }else{
-	pr_info("page in hashmap, updating state %c", reqstate);
+	//pr_info("page in hashmap, updating state %c", reqstate);
 
 	    if(coherence_state->state == WRITE){
 		    return;
@@ -499,8 +499,8 @@ static int simplefs_readpage(struct file *file, struct page *page)
 
 	const struct address_space *mapping = file->f_mapping;
 
-	pr_info("readpage ino %ld page %ld", mapping->host->i_ino, page->index);
-    //TODO insert into shmem_states
+	//pr_info("readpage ino %ld page %ld", mapping->host->i_ino, page->index);
+        //TODO insert into shmem_states
 
 	bh.b_state = 0;
 	bh.b_size = 1;
@@ -526,8 +526,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	size_t data_size;
 	void *buf = get_dummy_page_dma_addr(get_cpu());
 	r = mind_fetch_page(inode_pages_address, buf, &data_size);
-	BUG_ON(r);
-	
+        BUG_ON(r);
 	simplefs_kernel_page_write(page, get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, 0);
 	
 	//adds page to hashmap if not already in hashmap
@@ -634,7 +633,7 @@ static int simplefs_write_begin(struct file *file,
 
 	    unsigned int currentpage = pos / PAGE_SIZE;
 	    unsigned int lastpage = (pos + len) / PAGE_SIZE;
-    pr_info("write begin page number %d end page number %d, for inode %ld write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
+    //pr_info("write begin page number %d end page number %d, for inode %ld write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
 
 
     struct inode *inode = file->f_inode;
@@ -1102,7 +1101,7 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 
 
 	/*      ~*~       */ //TODO REMOVE THIS
-	inode_lock(inode);
+	//inode_lock(inode);
 	/*      ~*~       */
 
 	//stolen from mm/filemap.c
@@ -1145,7 +1144,7 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 
 	
 	/*      ~*~       */
-	inode_unlock(inode);
+	//inode_unlock(inode);
 	/*      ~*~       */
 	//pr_info("****ending read");
 	return retval;
@@ -1301,14 +1300,14 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 
 u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
-	pr_info("invalidate page callback called");
+	//pr_info("invalidate page callback called");
        struct shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
     if(coherence_state != NULL){
 	  shmem_invalidate(coherence_state, inv_argv);
-	pr_info("page was found");
+	//pr_info("page was found");
 
     }else{
-	    pr_info("page no longer in hash table");
+	    //pr_info("page no longer in hash table");
     }
     return 1024;
 }
