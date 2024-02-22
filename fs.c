@@ -22,11 +22,13 @@
 
 unsigned long sharedaddress;
 unsigned long shmem_address[10];
+unsigned long inode_address[10];
+unsigned long combined_address[20];
 static int readAddress = 0;
 //https://lynxbee.com/passing-command-line-arguments-parameters-to-linux-kernel-module/#.ZAUI5oDMKCg
 //https://tldp.org/LDP/lkmpg/2.4/html/x354.htm (also used this for printing longs)
 module_param(readAddress,int, 0);
-module_param_array(shmem_address, long, NULL, 0);
+module_param_array(combined_address, long, NULL, 0);
 
 /* Mount a simplefs partition */
 struct dentry *simplefs_mount(struct file_system_type *fs_type,
@@ -79,7 +81,8 @@ static int __init simplefs_init(void)
 		    shmem_address[i] = (uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
 		    pr_info("%ld, ", shmem_address[i]);
 	    }
-		pr_info("single print addresses %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld", shmem_address[0],
+            
+	    pr_info("single print addresses %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld", shmem_address[0],
 				shmem_address[1],
 				shmem_address[2],
 				shmem_address[3],
@@ -92,14 +95,46 @@ static int __init simplefs_init(void)
 				);
 
 	    pr_info("\n");
+
+	    pr_info("inode addresses:");
+            for(i = 0; i < 10; i++){
+                    inode_address[i] = (uintptr_t)alloc_kshmem(PAGE_SIZE, DISAGG_KSHMEM_SERV_FS_ID);
+                    pr_info("%ld, ", inode_address[i]);
+            }
+            
+	    pr_info("single print inode addresses %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld", inode_address[0],
+                                inode_address[1],
+                                inode_address[2],
+                                inode_address[3],
+                                inode_address[4],
+                                inode_address[5],
+                                inode_address[6],
+                                inode_address[7],
+                                inode_address[8],
+                                inode_address[9]
+                                );
+
+            pr_info("\n");
     }else{
+	    for(i = 0; i < 10; i++){
+	    	shmem_address[i] = combined_address[i];
+	    }
+
+	    for(i = 10; i < 20; i++){
+	    	inode_address[i-10] = combined_address[i];
+	    }
+
 	    pr_info("read addresses:");
 	    for(i = 0; i < 10; i++){
 		    pr_info("%ld, ", shmem_address[i]);
 	    }
 	    pr_info("\n");
 
-
+            pr_info("inode addresses:");
+            for(i = 0; i < 10; i++){
+                    pr_info("%ld, ", inode_address[i]);
+            }
+            pr_info("\n");
     }
    
     /*

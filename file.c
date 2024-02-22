@@ -110,9 +110,7 @@ static struct shmem_coherence_state * shmem_in_hashmap(unsigned long shmem_addr)
 
 
 extern unsigned long shmem_address[10];
-
-
-
+extern unsigned long inode_address[10];
 
 static void mind_pr_cache_dir_state(const char* msg,
 	unsigned long start_time, uintptr_t shmem_address,
@@ -613,7 +611,72 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
         return true;
 }
 
+static bool invalidate_inode_write(unsigned long ino, unsigned long i_size, void *inv_argv){
 
+        uintptr_t inode_pages_address;
+        int r;
+        struct mm_struct *mm;
+        mm = get_init_mm();
+        spinlock_t *ptl_ptr = NULL;
+        pte_t *temppte;
+        void *ptrdummy;
+        static struct cnthread_inv_msg_ctx send_ctx;
+        loff_t test = 20; 
+	//pr_info("invalidate_page_write 2");
+
+        inode_pages_address = inode_address[ino];
+
+	int cpu_id = get_cpu();
+	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+       	//pr_info("invalidate_page_write 3");
+
+        size_t data_size;
+        void *buf = get_dummy_page_dma_addr(get_cpu());
+        r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+        BUG_ON(r);
+
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+
+        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+	//pr_info("invalidate_page_write 4");
+
+	unsigned long * i_size_buf = (unsigned long*)get_dummy_page_buf_addr(get_cpu()); 
+        i_size_buf[0] = i_size;
+
+	//simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+        
+        struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
+        struct cnthread_inv_msg_ctx *inv_ctx = &((struct cnthread_inv_argv *)inv_argv)->inv_ctx;
+
+        rdma_ctx = &inv_ctx->rdma_ctx;
+        inv_ctx->original_qp = (rdma_ctx->ret & CACHELINE_ROCE_RKEY_QP_MASK) >> CACHELINE_ROCE_RKEY_QP_SHIFT;
+        create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
+        *((u32 *)(&(inv_ctx->inval_buf[CACHELINE_ROCE_VOFFSET_TO_IP]))) = rdma_ctx->ip_val;
+
+        //pr_info("inv_ctx->original_qp %d", inv_ctx->original_qp);
+
+        u32 req_qp = (get_id_from_requester(inv_ctx->rdma_ctx.requester) * DISAGG_QP_PER_COMPUTE) + inv_ctx->original_qp;
+        //pr_info("req_qp %d", req_qp);
+
+        //pr_info("before cn_copy_page");
+        cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        temppte, CN_TARGET_PAGE, req_qp, buf);
+        //pr_info("after cn_copy_page");
+
+        //pr_info("before inval ack");
+        //pr_info("inv_ctx->inval_buf %d", inv_ctx->inval_buf);
+        _cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
+        //pr_info("after inval ack");
+
+        //pr_info("before FinACK");
+        cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
+        //pr_info("after FinACK");
+
+        spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        return true;
+}
 
 /*
  * Called by the VFS when a write() syscall occurs on file before writing the
