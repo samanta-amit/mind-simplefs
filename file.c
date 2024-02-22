@@ -47,6 +47,7 @@ DEFINE_SPINLOCK(dummy_page_lock);
 
 static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 
+static int inval_counter;
 
 struct shmem_coherence_state {
     	unsigned long shmem_addr;
@@ -110,9 +111,6 @@ static struct shmem_coherence_state * shmem_in_hashmap(unsigned long shmem_addr)
 
 
 extern unsigned long shmem_address[10];
-
-
-
 
 static void mind_pr_cache_dir_state(const char* msg,
 	unsigned long start_time, uintptr_t shmem_address,
@@ -1286,7 +1284,9 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 	}else{
 		//pr_info("page no longer in page cache");
 	}
-
+        
+	inval_counter++;
+	pr_info("Count: %d\n", inval_counter);
 	//delete page from the hashmap
 	hash_del(&(coherence_state->link));
 
