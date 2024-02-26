@@ -9,6 +9,7 @@
 #include <linux/hashtable.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
+#include <linux/rwsem.h>
 #include "bitmap.h"
 #include <../../include/disagg/cnthread_disagg.h>
 #include <../../include/disagg/exec_disagg.h>
@@ -51,6 +52,7 @@ static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_
 struct shmem_coherence_state {
     	unsigned long shmem_addr;
 	unsigned long i_ino;
+	struct inode * inode;
 	int pagenum;
 	int state;
 	struct address_space *mapping;
@@ -62,6 +64,12 @@ struct shmem_coherence_state {
 DEFINE_HASHTABLE(shmem_states, 8); // 8 = 256 buckets
 // Protects shmem_states and everything it references.
 DEFINE_SPINLOCK(shmem_states_lock);
+
+DEFINE_HASHTABLE(inode_states, 8); // 8 = 256 buckets
+// Protects shmem_states and everything it references.
+DEFINE_SPINLOCK(inode_states_lock);
+
+
 
 static void hash_shmem(unsigned long shmem_addr, int inodenum, int pagenum, struct address_space *mapping, int state) {
 	//pr_info("adding shmem information to hashtable");
@@ -77,6 +85,21 @@ static void hash_shmem(unsigned long shmem_addr, int inodenum, int pagenum, stru
 	spin_lock(&shmem_states_lock);
 	hash_add(shmem_states, &(shmem_state->link), shmem_addr);
 	spin_unlock(&shmem_states_lock);
+}
+
+static void inode_hash_shmem(unsigned long inode_addr, int inodenum, struct inode * inode, int state) {
+	//pr_info("adding shmem information to hashtable");
+	struct shmem_coherence_state *shmem_state;
+	//refer more to Documentation/kernel-hacking/hacking.rst
+	shmem_state = kmalloc(sizeof(struct shmem_coherence_state), GFP_KERNEL);
+	shmem_state->i_ino = inodenum;
+	shmem_state->inode = inode;
+	shmem_state->state = state;
+	shmem_state->shmem_addr = inode_addr;
+
+	spin_lock(&inode_states_lock);
+	hash_add(inode_states, &(shmem_state->link), inode_addr);
+	spin_unlock(&inode_states_lock);
 }
 
 //https://kernelnewbies.org/FAQ/Hashtables
@@ -107,6 +130,33 @@ static struct shmem_coherence_state * shmem_in_hashmap(unsigned long shmem_addr)
 	return NULL; //NULL;
 
 }
+
+static struct shmem_coherence_state * inode_shmem_in_hashmap(unsigned long inode_addr) {
+	struct shmem_coherence_state *tempshmem;
+	int i = inode_addr;
+
+	//TODO make sure that page is still valid, and hasn't been removed from cache
+
+	//locking the spin lock
+	spin_lock(&inode_states_lock);
+
+	hash_for_each(inode_states, i, tempshmem, link) {
+		if(tempshmem->shmem_addr == inode_addr){ 
+			//unlocking the spin lock
+			spin_unlock(&inode_states_lock);
+			return tempshmem; //current;
+		}
+	}	
+
+	//unlocking the spin lock
+	spin_unlock(&inode_states_lock);
+
+	return NULL; //NULL;
+
+}
+
+
+
 
 
 extern unsigned long shmem_address[10];
@@ -433,6 +483,34 @@ static void update_coherence(struct inode * inode, int page, struct address_spac
     }
 } 
 
+static void update_inode_coherence(struct inode * inode, int reqstate) {
+	uintptr_t inode_pages_address = inode_address[inode->i_ino];
+
+    //TODO add hashtable locks
+
+    //TODO at the moment shmem_in_hashmap acquires the locks, we might just 
+    //want to move that lock acquiring to be outside of that function so that
+    //we can have it here so that we can read something from the hashmap and modify
+    //it without another thread messing it up
+    struct shmem_coherence_state * coherence_state = inode_shmem_in_hashmap(inode_pages_address);
+    if(coherence_state == NULL){
+        //page not in hashmap
+        inode_hash_shmem(inode_pages_address, inode->i_ino, inode, reqstate);
+	pr_info("inode not in hashmap adding with state %c", reqstate);
+
+    }else{
+	pr_info("inode in hashmap, updating state %c", reqstate);
+
+	    if(coherence_state->state == WRITE){
+		    return;
+	    }else{
+		    if(reqstate == WRITE){
+			    coherence_state->state = WRITE;
+		    }
+	    }
+    }
+}
+
 /*
  * STOLEN FROM MPAGE.C
  * support function for mpage_readpages.  The fs supplied get_block might
@@ -611,7 +689,7 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
         return true;
 }
 
-static bool invalidate_inode_write(unsigned long ino, unsigned long i_size, void *inv_argv){
+static bool request_inode_write(unsigned long ino){
 
         uintptr_t inode_pages_address;
         int r;
@@ -622,14 +700,10 @@ static bool invalidate_inode_write(unsigned long ino, unsigned long i_size, void
         void *ptrdummy;
         static struct cnthread_inv_msg_ctx send_ctx;
         loff_t test = 20; 
-	//pr_info("invalidate_page_write 2");
-
         inode_pages_address = inode_address[ino];
 
 	int cpu_id = get_cpu();
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
-
-       	//pr_info("invalidate_page_write 3");
 
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(get_cpu());
@@ -639,8 +713,7 @@ static bool invalidate_inode_write(unsigned long ino, unsigned long i_size, void
         temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
 
         ptrdummy = get_dummy_page_buf_addr(get_cpu());
-	//pr_info("invalidate_page_write 4");
-
+	/*
 	unsigned long * i_size_buf = (unsigned long*)get_dummy_page_buf_addr(get_cpu()); 
         i_size_buf[0] = i_size;
 
@@ -672,9 +745,9 @@ static bool invalidate_inode_write(unsigned long ino, unsigned long i_size, void
         //pr_info("before FinACK");
         cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
         //pr_info("after FinACK");
-
+	*/
         spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-
+	
         return true;
 }
 
@@ -751,12 +824,23 @@ static int simplefs_write_end(struct file *file,
     uintptr_t inode_pages_address;
     unsigned int currentpage = pos / PAGE_SIZE;
 
+    loff_t old_i_size = inode->i_size;
     
     /* Complete the write() */
     int ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
+
+
     if (ret < len) {
         pr_err("wrote less than requested.");
 	//TODO perform coherence on multiple pages
+	
+	//check size 	
+	if(old_i_size != inode->i_size){
+		//TODO perform inode size coherence here
+		request_inode_write(inode->i_ino);
+		update_inode_coherence(inode, WRITE);
+	}
+		
 	if(!check_coherence(inode, currentpage, mapping, WRITE)){
 		invalidate_page_write(file, inode, page);
 		update_coherence(inode, currentpage, mapping, WRITE);
@@ -815,7 +899,12 @@ end:
     //inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (page->index));
     //hash_shmem(inode_pages_address, mapping->host->i_ino, page->index, mapping, 1);
     //TODO perform coherence on multiple pages
-
+    
+    //check size 	
+    if(old_i_size != inode->i_size){
+	    //TODO perform inode size coherence here
+	    request_inode_write(inode->i_ino);
+	    }
     if(!check_coherence(inode, currentpage, mapping, WRITE)){
 	    invalidate_page_write(file, inode, page);
 	    update_coherence(inode, currentpage, mapping, WRITE);
@@ -1236,10 +1325,78 @@ u64 shmem_address_check(void *addr, unsigned long size)
     }else{
 	    //pr_info("shmem was not in the hashtable");
     }
+
+	//check to see if it is in the inode hashmap
+    coherence_state = inode_shmem_in_hashmap(addr);
+    if(coherence_state != NULL){
+	    pr_info("shmem was in inode hash table");
+	    //pr_info("shmem address %ld", coherence_state->shmem_addr);
+	    //pr_info("shmem i_ino %d", coherence_state->i_ino);
+	    //pr_info("shmem pagenum %d", coherence_state->pagenum);
+	    //pr_info("shmem coherence state %d", coherence_state->state);
+	    return 1;
+    }else{
+	    //pr_info("shmem was not in the hashtable");
+    }
+
     return 0;
 }
 
 
+
+static bool shmem_invalidate_inode_write(struct inode * inode, void *inv_argv){
+
+        struct mm_struct *mm;
+        mm = get_init_mm();
+        spinlock_t *ptl_ptr = NULL;
+        pte_t *temppte;
+        void *ptrdummy;
+        static struct cnthread_inv_msg_ctx send_ctx;
+        loff_t test = 20; 
+	int i;
+	uintptr_t inode_pages_address = shmem_address[inode->i_ino]; 
+
+	int cpu_id = get_cpu();
+
+        //spin_lock(&dummy_page_lock);
+        spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        size_t data_size;
+        void *buf = get_dummy_page_dma_addr(get_cpu());
+        //r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+        //BUG_ON(r);
+
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+
+        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+
+        //writes data to that page
+        //copy data into dummy buffer, and send to switch
+	((uint64_t*)get_dummy_page_buf_addr(get_cpu()))[0] = inode->i_size;
+
+	pr_info("testing invalidate inode write %ld", ((uint64_t*)get_dummy_page_buf_addr(get_cpu()))[0]);
+
+
+	struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
+        struct cnthread_inv_msg_ctx *inv_ctx = &((struct cnthread_inv_argv *)inv_argv)->inv_ctx;
+	
+	rdma_ctx = &inv_ctx->rdma_ctx;
+	inv_ctx->original_qp = (rdma_ctx->ret & CACHELINE_ROCE_RKEY_QP_MASK) >> CACHELINE_ROCE_RKEY_QP_SHIFT;
+        create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
+        *((u32 *)(&(inv_ctx->inval_buf[CACHELINE_ROCE_VOFFSET_TO_IP]))) = rdma_ctx->ip_val;
+
+	u32 req_qp = (get_id_from_requester(inv_ctx->rdma_ctx.requester) * DISAGG_QP_PER_COMPUTE) + inv_ctx->original_qp;
+	
+	cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        temppte, CN_TARGET_PAGE, req_qp, buf);
+        
+	_cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
+        
+        cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
+	
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+	return true;
+}
 
 static bool shmem_invalidate_page_write(struct address_space * mapping, struct page * pagep, void *inv_argv){
 
@@ -1317,6 +1474,53 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 	return true;
 }
 
+
+static bool inode_shmem_invalidate(struct shmem_coherence_state * coherence_state, void *inv_argv){
+
+	pr_info("inode shmem invalidate");
+	void *pagep;
+	struct inode *inode = coherence_state->inode;
+
+	//lock hashtable	
+
+	//lock inode 
+	down_write((&(inode->i_rwsem)));		
+	shmem_invalidate_inode_write(inode, inv_argv);
+	//TODO ALSO INCLUDE READ CASE
+	//we are now invalid
+	//writer can begin writing
+
+	//request read access 
+	spin_lock(&dummy_page_lock);
+	size_t data_size;
+	int r;
+	void *buf = get_dummy_page_dma_addr(get_cpu());
+        uintptr_t inode_pages_address = shmem_address[inode->i_ino]; 
+	r = mind_fetch_page(inode_pages_address, buf, &data_size);
+        BUG_ON(r);
+
+	//update the value in the inode
+	pr_info("before updated size %ld", inode->i_size);
+	inode->i_size = ((loff_t*)(buf))[0];
+	pr_info("updated size to %ld", inode->i_size);
+	spin_unlock(&dummy_page_lock);
+
+	//on access gained, unlock inode		
+	up_write((&(inode->i_rwsem)));
+
+
+
+	//spin_lock(&inode_states_lock);
+	//UPDATE STATUS IN HASHTABLE HERE 
+	//spin_unlock(&inode_states_lock);
+
+	return true;
+
+}
+
+
+
+
 static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, void *inv_argv){
 
 	pr_info("shmem invalidate");
@@ -1372,6 +1576,16 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
     }else{
 	    //pr_info("page no longer in hash table");
     }
+
+    coherence_state = inode_shmem_in_hashmap(addr);
+    if(coherence_state != NULL){
+	    inode_shmem_invalidate(coherence_state, inv_argv);
+	    pr_info("inodewas found");
+
+    }else{
+	    pr_info("inode no longer in hash table");
+    }
+
     return 1024;
 }
 
