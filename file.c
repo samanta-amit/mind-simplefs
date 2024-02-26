@@ -134,7 +134,7 @@ static struct shmem_coherence_state * shmem_in_hashmap(unsigned long shmem_addr)
 static struct shmem_coherence_state * inode_shmem_in_hashmap(unsigned long inode_addr) {
 	struct shmem_coherence_state *tempshmem;
 	int i = inode_addr;
-
+	pr_info("searching for inode in hashmap %ld", inode_addr);
 	//TODO make sure that page is still valid, and hasn't been removed from cache
 
 	//locking the spin lock
@@ -144,6 +144,7 @@ static struct shmem_coherence_state * inode_shmem_in_hashmap(unsigned long inode
 		if(tempshmem->shmem_addr == inode_addr){ 
 			//unlocking the spin lock
 			spin_unlock(&inode_states_lock);
+			pr_info("found inode");
 			return tempshmem; //current;
 		}
 	}	
@@ -485,7 +486,7 @@ static void update_coherence(struct inode * inode, int page, struct address_spac
 
 static void update_inode_coherence(struct inode * inode, int reqstate) {
 	uintptr_t inode_pages_address = inode_address[inode->i_ino];
-
+    pr_info("update inode coherence %ld", inode_pages_address);
     //TODO add hashtable locks
 
     //TODO at the moment shmem_in_hashmap acquires the locks, we might just 
@@ -903,7 +904,11 @@ end:
     //check size 	
     if(old_i_size != inode->i_size){
 	    //TODO perform inode size coherence here
+	    pr_info("inode size changed %d", inode->i_ino); 
 	    request_inode_write(inode->i_ino);
+	    pr_info("after request inode write");
+	    update_inode_coherence(inode, WRITE);
+		
 	    }
     if(!check_coherence(inode, currentpage, mapping, WRITE)){
 	    invalidate_page_write(file, inode, page);
@@ -1329,7 +1334,7 @@ u64 shmem_address_check(void *addr, unsigned long size)
 	//check to see if it is in the inode hashmap
     coherence_state = inode_shmem_in_hashmap(addr);
     if(coherence_state != NULL){
-	    pr_info("shmem was in inode hash table");
+	    pr_info("shmem found in inode hash table");
 	    //pr_info("shmem address %ld", coherence_state->shmem_addr);
 	    //pr_info("shmem i_ino %d", coherence_state->i_ino);
 	    //pr_info("shmem pagenum %d", coherence_state->pagenum);
@@ -1501,6 +1506,9 @@ static bool inode_shmem_invalidate(struct shmem_coherence_state * coherence_stat
 
 	//update the value in the inode
 	pr_info("before updated size %ld", inode->i_size);
+	//pr_info("buffer data %ld", ((loff_t*)(buf))[0]);
+        pr_info("buffer contains %ld", ((loff_t*)get_dummy_page_buf_addr(get_cpu()))[0]);
+ 
 	inode->i_size = ((loff_t*)(buf))[0];
 	pr_info("updated size to %ld", inode->i_size);
 	spin_unlock(&dummy_page_lock);
@@ -1567,23 +1575,24 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 
 u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
-	//pr_info("invalidate page callback called");
+    pr_info("invalidate page callback called address %ld", addr);
        struct shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
     if(coherence_state != NULL){
 	  shmem_invalidate(coherence_state, inv_argv);
-	//pr_info("page was found");
+	pr_info("page was found");
 
     }else{
 	    //pr_info("page no longer in hash table");
-    }
+	    coherence_state = inode_shmem_in_hashmap(addr);
+	    if(coherence_state != NULL){
+		    inode_shmem_invalidate(coherence_state, inv_argv);
+		    pr_info("inodewas found");
 
-    coherence_state = inode_shmem_in_hashmap(addr);
-    if(coherence_state != NULL){
-	    inode_shmem_invalidate(coherence_state, inv_argv);
-	    pr_info("inodewas found");
+	    }else{
+		    pr_info("memory wasn't ours");
+	    }
 
-    }else{
-	    pr_info("inode no longer in hash table");
+
     }
 
     return 1024;
