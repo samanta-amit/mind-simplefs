@@ -226,7 +226,10 @@ static int mind_fetch_page(
 
 	pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
 	if(r <= 0)
+	{
 		cancel_waiting_for_nack(wait_node);
+		pr_info("stopped waiting for nack");
+	}
 	r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
 	//mind_pr_cache_dir_state(
@@ -271,12 +274,15 @@ static int mind_fetch_page_write(
         // if is_kshmem_address(shmem_address) then task_struct is never
         // derefenced.
         r = send_pfault_to_mn(NULL, X86_PF_WRITE, shmem_address, 0, &ret_buf);
+	pr_info("r value mind_fetch_page_write %d", r);
         //pr_info("sending pfault to mn done");
         wait_node->ack_buf = ret_buf.ack_buf;
 
         pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
-        if(r <= 0)
+        if(r <= 0){
                 cancel_waiting_for_nack(wait_node);
+		pr_info("stopped waiting");
+	}
         r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
         //mind_pr_cache_dir_state(
@@ -702,6 +708,8 @@ static bool request_inode_write(unsigned long ino){
         static struct cnthread_inv_msg_ctx send_ctx;
         loff_t test = 20; 
         inode_pages_address = inode_address[ino];
+	pr_info("requesting address 0x%lx", inode_pages_address);
+	pr_info("requesting address %ld", inode_pages_address);
 
 	int cpu_id = get_cpu();
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
@@ -709,11 +717,12 @@ static bool request_inode_write(unsigned long ino){
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(get_cpu());
         r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+	pr_info("r value was %d size fetched %d", r, data_size);
         BUG_ON(r);
 
-        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+        //temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
 
-        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+        //ptrdummy = get_dummy_page_buf_addr(get_cpu());
 	/*
 	unsigned long * i_size_buf = (unsigned long*)get_dummy_page_buf_addr(get_cpu()); 
         i_size_buf[0] = i_size;
@@ -1317,8 +1326,9 @@ u64 shmem_address_check(void *addr, unsigned long size)
     //pr_info("tesing shmem address callback");
     //pr_info("tesing shmem address callback");
     //pr_info("tesing shmem address callback");
-    //pr_info("tesing shmem address callback");
-    //pr_info("tesing shmem address callback");
+    pr_info("shmem address callback %ld", addr);
+    pr_info("shmem address callback 0x%lx", addr);
+
     struct  shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
     if(coherence_state != NULL){
 	    //pr_info("shmem was in hash table");
@@ -1503,13 +1513,16 @@ static bool inode_shmem_invalidate(struct shmem_coherence_state * coherence_stat
         uintptr_t inode_pages_address = shmem_address[inode->i_ino]; 
 	r = mind_fetch_page(inode_pages_address, buf, &data_size);
         BUG_ON(r);
-
+	pr_info("r was %d data_size was %d", r, data_size);	
 	//update the value in the inode
 	pr_info("before updated size %ld", inode->i_size);
 	//pr_info("buffer data %ld", ((loff_t*)(buf))[0]);
         pr_info("buffer contains %ld", ((loff_t*)get_dummy_page_buf_addr(get_cpu()))[0]);
  
-	inode->i_size = ((loff_t*)(buf))[0];
+	//inode->i_size = ((loff_t*)(buf))[0];
+	inode->i_size = ((loff_t*)get_dummy_page_buf_addr(get_cpu()))[0];
+
+
 	pr_info("updated size to %ld", inode->i_size);
 	spin_unlock(&dummy_page_lock);
 

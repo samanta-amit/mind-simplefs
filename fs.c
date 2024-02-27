@@ -98,7 +98,7 @@ static int __init simplefs_init(void)
 
 	    pr_info("inode addresses:");
             for(i = 0; i < 10; i++){
-                    inode_address[i] = (uintptr_t)alloc_kshmem(PAGE_SIZE, DISAGG_KSHMEM_SERV_FS_ID);
+                    inode_address[i] = (uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
                     pr_info("%ld, ", inode_address[i]);
             }
             
