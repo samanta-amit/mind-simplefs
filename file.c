@@ -851,10 +851,12 @@ static int simplefs_write_end(struct file *file,
 		update_inode_coherence(inode, WRITE);
 		request_inode_write(inode->i_ino);
 	}
-		
+	
+
+	//TODO acquire page lock?	
 	if(!check_coherence(inode, currentpage, mapping, WRITE)){
-		invalidate_page_write(file, inode, page);
 		update_coherence(inode, currentpage, mapping, WRITE);
+		invalidate_page_write(file, inode, page);
 	}
 
 
@@ -922,8 +924,9 @@ end:
 		
 	    }
     if(!check_coherence(inode, currentpage, mapping, WRITE)){
-	    invalidate_page_write(file, inode, page);
+
 	    update_coherence(inode, currentpage, mapping, WRITE);
+	    invalidate_page_write(file, inode, page);
     }
 
 
@@ -1410,7 +1413,7 @@ static bool shmem_invalidate_inode_write(struct inode * inode, void *inv_argv){
 	_cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
         
         cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
-	
+	pr_info("finish ack sent for inode");	
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 	return true;
 }
