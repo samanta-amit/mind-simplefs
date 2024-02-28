@@ -847,8 +847,9 @@ static int simplefs_write_end(struct file *file,
 	//check size 	
 	if(old_i_size != inode->i_size){
 		//TODO perform inode size coherence here
-		request_inode_write(inode->i_ino);
+	
 		update_inode_coherence(inode, WRITE);
+		request_inode_write(inode->i_ino);
 	}
 		
 	if(!check_coherence(inode, currentpage, mapping, WRITE)){
@@ -914,9 +915,10 @@ end:
     if(old_i_size != inode->i_size){
 	    //TODO perform inode size coherence here
 	    pr_info("inode size changed %d", inode->i_ino); 
-	    request_inode_write(inode->i_ino);
-	    pr_info("after request inode write");
 	    update_inode_coherence(inode, WRITE);
+
+	    pr_info("after update inode coherence ");
+	    request_inode_write(inode->i_ino);
 		
 	    }
     if(!check_coherence(inode, currentpage, mapping, WRITE)){
@@ -1369,7 +1371,7 @@ static bool shmem_invalidate_inode_write(struct inode * inode, void *inv_argv){
         static struct cnthread_inv_msg_ctx send_ctx;
         loff_t test = 20; 
 	int i;
-	uintptr_t inode_pages_address = shmem_address[inode->i_ino]; 
+	uintptr_t inode_pages_address = inode_address[inode->i_ino]; 
 
 	int cpu_id = get_cpu();
 
@@ -1510,7 +1512,7 @@ static bool inode_shmem_invalidate(struct shmem_coherence_state * coherence_stat
 	size_t data_size;
 	int r;
 	void *buf = get_dummy_page_dma_addr(get_cpu());
-        uintptr_t inode_pages_address = shmem_address[inode->i_ino]; 
+        uintptr_t inode_pages_address = inode_address[inode->i_ino]; 
 	r = mind_fetch_page(inode_pages_address, buf, &data_size);
         BUG_ON(r);
 	pr_info("r was %d data_size was %d", r, data_size);	
