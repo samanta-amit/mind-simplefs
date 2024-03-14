@@ -196,7 +196,7 @@ static int mind_fetch_page_write(
         int r;
         unsigned long start_time = jiffies;
 
-	spin_lock(&dummy_page_lock);
+	//spin_lock(&dummy_page_lock);
 
         ret_buf.data_size = PAGE_SIZE;
         ret_buf.data = page_dma_address;
@@ -207,7 +207,7 @@ static int mind_fetch_page_write(
         wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
         BUG_ON(!wait_node);
 	
-	spin_unlock(&dummy_page_lock);
+	//spin_unlock(&dummy_page_lock);
 
         //mind_pr_cache_dir_state(
         //        "BEFORFE PFAULT ACK/NACK",
@@ -384,7 +384,7 @@ static int check_coherence(struct inode * inode, int page, struct address_space 
 	    (PAGE_SIZE * (page));
 
     //TODO add hashtable locks
-
+    
     struct shmem_coherence_state * coherence_state = shmem_in_hashmap(inode_pages_address);
     if(coherence_state == NULL){
 	return 0;
@@ -578,14 +578,14 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
         r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         BUG_ON(r);
 
-        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+        //temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
 
-        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+        //ptrdummy = get_dummy_page_buf_addr(get_cpu());
 	//pr_info("invalidate_page_write 4");
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
-        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+        //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
         
 	//int i;
         //for(i = 0; i < 20; i++){
@@ -610,7 +610,6 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
 
         return true;
 }
-
 
 
 /*
@@ -693,8 +692,8 @@ static int simplefs_write_end(struct file *file,
         pr_err("wrote less than requested.");
 	//TODO perform coherence on multiple pages
 	if(!check_coherence(inode, currentpage, mapping, WRITE)){
-		invalidate_page_write(file, inode, page);
 		update_coherence(inode, currentpage, mapping, WRITE);
+		invalidate_page_write(file, inode, page);
 	}
 
 
@@ -752,8 +751,8 @@ end:
     //TODO perform coherence on multiple pages
 
     if(!check_coherence(inode, currentpage, mapping, WRITE)){
-	    invalidate_page_write(file, inode, page);
 	    update_coherence(inode, currentpage, mapping, WRITE);
+	    invalidate_page_write(file, inode, page);
     }
 
 
@@ -1201,13 +1200,13 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         //r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         //BUG_ON(r);
 
-        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+        //temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
 
-        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+        //ptrdummy = get_dummy_page_buf_addr(get_cpu());
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
-        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+        //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
 
         //for(i = 0; i < 20; i++){
         //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
@@ -1254,12 +1253,12 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 
 static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, void *inv_argv){
 
-	pr_info("shmem invalidate");
+	//pr_info("shmem invalidate");
 	void *pagep;
 	struct address_space *mapping = coherence_state->mapping;
 
 	//lock hashtable	
-	spin_lock(&shmem_states_lock);
+	//spin_lock(&shmem_states_lock);
 
 	//lock page tree
 	spin_lock_irq(&mapping->tree_lock);
@@ -1286,12 +1285,12 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 	}
         
 	inval_counter++;
-	pr_info("Count: %d\n", inval_counter);
+	//pr_info("Count: %d\n", inval_counter);
 	//delete page from the hashmap
 	hash_del(&(coherence_state->link));
 
 	spin_unlock_irq(&mapping->tree_lock);
-        spin_unlock(&shmem_states_lock);
+        //spin_unlock(&shmem_states_lock);
 
 	return true;
 
