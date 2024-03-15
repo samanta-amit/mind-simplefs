@@ -578,14 +578,14 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, struc
         r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         BUG_ON(r);
 
-        //temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
 
-        //ptrdummy = get_dummy_page_buf_addr(get_cpu());
+        ptrdummy = get_dummy_page_buf_addr(get_cpu());
 	//pr_info("invalidate_page_write 4");
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
-        //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
         
 	//int i;
         //for(i = 0; i < 20; i++){
@@ -1200,13 +1200,13 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         //r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         //BUG_ON(r);
 
-        //temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
 
-        //ptrdummy = get_dummy_page_buf_addr(get_cpu());
+        ptrdummy = get_dummy_page_buf_addr(get_cpu());
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
-        //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
 
         //for(i = 0; i < 20; i++){
         //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
