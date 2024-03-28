@@ -407,9 +407,9 @@ static void update_coherence(struct inode * inode, int page, struct address_spac
     inode_pages_address = shmem_address[inode->i_ino] +
 	    (PAGE_SIZE * (page));
 
-	//pr_info("update coherence called");
+    //pr_info("update coherence called");
     //TODO add hashtable locks
-
+    
     //TODO at the moment shmem_in_hashmap acquires the locks, we might just 
     //want to move that lock acquiring to be outside of that function so that
     //we can have it here so that we can read something from the hashmap and modify
@@ -1268,7 +1268,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 	//this is stolen from find_get_entry in filemap.c
 	//spin locks stolen from fs/nilfs2/page.c 
 	pagep = radix_tree_lookup(&mapping->page_tree, coherence_state->pagenum);
-
+	
 	if(pagep){
 
 		struct page * testp = pagep;
@@ -1284,10 +1284,13 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		//pr_info("page no longer in page cache");
 	}
         
-	inval_counter++;
+	//inval_counter++;
 	//pr_info("Count: %d\n", inval_counter);
 	//delete page from the hashmap
+	
+	spin_lock(&shmem_states_lock);
 	hash_del(&(coherence_state->link));
+	spin_unlock(&shmem_states_lock);
 
 	spin_unlock_irq(&mapping->tree_lock);
         //spin_unlock(&shmem_states_lock);
