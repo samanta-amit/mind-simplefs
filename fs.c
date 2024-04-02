@@ -159,6 +159,10 @@ static int __init simplefs_init(void)
         goto end;
     }
 
+	//set up the rw_sem for the page pointer hash table
+	//from rwsem.h
+	init_rwsem(&hash_page_rwsem);
+
     pr_info("module loaded\n");
 
 end:

@@ -131,6 +131,7 @@ extern const struct dentry_operations simplefs_dentry_ops;
 extern uint32_t simplefs_ext_search(struct simplefs_file_ei_block *index,
                                     uint32_t iblock);
 
+extern struct rw_semaphore hash_page_rwsem;
 
 u64 shmem_address_check(void *addr, unsigned long size);
 u64 testing_invalidate_page_callback(void *addr, void *inv_argv);
