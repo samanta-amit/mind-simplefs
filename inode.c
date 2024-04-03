@@ -11,6 +11,9 @@
 static const struct inode_operations simplefs_inode_ops;
 static const struct inode_operations symlink_inode_ops;
 
+extern unsigned long inode_address[10];
+
+
 /* Get inode ino from disk */
 struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
 {
@@ -34,6 +37,9 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
     if (ino >= sbi->nr_inodes)
         return ERR_PTR(-EINVAL);
 
+    down_write(&hash_inode_rwsem); //hash inode lock 1
+
+
     /* Get a locked inode from Linux */
     inode = iget_locked(sb, ino);
     if (!inode)
@@ -41,7 +47,24 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
 
     /* If inode is in cache, return it */
     if (!(inode->i_state & I_NEW))
+	    up_write(&hash_inode_rwsem);
         return inode;
+
+    //add the inode to the hashtable
+    uintptr_t inode_pages_address;
+    inode_pages_address = inode_address[ino];
+
+
+    struct shmem_coherence_state * old_state = inode_shmem_in_hashmap(inode_pages_address);
+    if(old_state != NULL){
+	pr_err("INODE BEING REUSED");
+    }
+
+    inode_hash_shmem(inode_pages_address, ino, inode, 1); //1 for WRITE
+    request_inode_write(ino);
+	
+    up_write(&hash_inode_rwsem); //unlock hashtable
+
 
     ci = SIMPLEFS_INODE(inode);
     /* Read inode from disk and initialize */

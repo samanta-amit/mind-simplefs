@@ -52,20 +52,6 @@ DEFINE_SPINLOCK(dummy_page_lock);
 static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 
 
-struct shmem_coherence_state {
-    	unsigned long shmem_addr;
-	unsigned long i_ino;
-	struct inode * inode;
-	int pagenum;
-	int state;
-	int page_locked_state;
-	int table_locked_state;
-
-	struct address_space *mapping;
-	struct hlist_node link;
-	struct rw_semaphore rwsem;
-};
-
 struct rw_semaphore hash_page_rwsem;
 struct rw_semaphore hash_inode_rwsem;
 
@@ -103,7 +89,7 @@ static void hash_shmem(unsigned long shmem_addr, int inodenum, int pagenum, stru
 	//spin_unlock(&shmem_states_lock);
 }
 
-static void inode_hash_shmem(unsigned long inode_addr, int inodenum, struct inode * inode, int state) {
+void inode_hash_shmem(unsigned long inode_addr, int inodenum, struct inode * inode, int state) {
 	//pr_info("adding shmem information to hashtable");
 	struct shmem_coherence_state *shmem_state;
 	//refer more to Documentation/kernel-hacking/hacking.rst
@@ -114,10 +100,10 @@ static void inode_hash_shmem(unsigned long inode_addr, int inodenum, struct inod
 	shmem_state->shmem_addr = inode_addr;
 
 	//init the inode lock
-	init_rwsem(&(shmem_state->rwsem));
+	//init_rwsem(&(shmem_state->rwsem));
 
 	//acquire the page in writemode	
-	down_read(&(shmem_state->rwsem));
+	//down_read(&(shmem_state->rwsem));
 
 
 
@@ -155,7 +141,7 @@ static struct shmem_coherence_state * shmem_in_hashmap(unsigned long shmem_addr)
 
 }
 
-static struct shmem_coherence_state * inode_shmem_in_hashmap(unsigned long inode_addr) {
+struct shmem_coherence_state * inode_shmem_in_hashmap(unsigned long inode_addr) {
 	struct shmem_coherence_state *tempshmem;
 	int i = inode_addr;
 	pr_info("searching for inode in hashmap %ld", inode_addr);
@@ -614,7 +600,7 @@ static void update_coherence(struct inode * inode, int page, struct address_spac
     }
 } 
 
-static struct shmem_coherence_state * update_inode_coherence(struct inode * inode, int reqstate) {
+struct shmem_coherence_state * update_inode_coherence(struct inode * inode, int reqstate) {
 	uintptr_t inode_pages_address = inode_address[inode->i_ino];
 	pr_info("update inode coherence %ld", inode_pages_address);
 	//TODO add hashtable locks
@@ -871,7 +857,7 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
         return true;
 }
 
-static bool request_inode_write(unsigned long ino){
+bool request_inode_write(unsigned long ino){
 
         uintptr_t inode_pages_address;
         int r;
@@ -1001,6 +987,115 @@ static int simplefs_write_begin(struct file *file,
 }
 
 
+static int simplefs_modified_write_end(struct file *file,
+                              struct address_space *mapping,
+                              loff_t pos,
+                              unsigned int len,
+                              unsigned int copied,
+                              struct page *page,
+                              void *fsdata, struct shmem_coherence_state * inode_state)
+{
+    struct inode *inode = file->f_inode;
+    struct simplefs_inode_info *ci = SIMPLEFS_INODE(inode);
+    struct super_block *sb = inode->i_sb;
+    uint32_t nr_blocks_old;
+    unsigned int currentpage = pos / PAGE_SIZE;
+
+    loff_t old_i_size = inode->i_size;
+    uintptr_t inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (page->index));
+
+    /* Complete the write() */
+    int ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
+
+
+    pr_err("write end page was %d\n", page);
+
+    if (ret < len) {
+        pr_err("wrote less than requested.");
+	//TODO perform coherence on multiple pages
+	
+	//check size 	
+	//TODO check to see if we already have it in write mode
+	if((old_i_size != inode->i_size) && inode_state->state != WRITE){
+		//shouldn't have it in write mode, and we already
+		//have inode lock
+		request_inode_write(inode->i_ino);
+		inode_state->state = WRITE;
+	}
+	
+
+	return ret;
+    }
+
+    nr_blocks_old = inode->i_blocks;
+
+    /* Update inode metadata */
+    inode->i_blocks = inode->i_size / SIMPLEFS_BLOCK_SIZE + 2;
+    inode->i_mtime = inode->i_ctime = current_time(inode);
+    mark_inode_dirty(inode);
+
+    /* If file is smaller than before, free unused blocks */
+    if (nr_blocks_old > inode->i_blocks) {
+	    int i;
+	    struct buffer_head *bh_index;
+	    struct simplefs_file_ei_block *index;
+	    uint32_t first_ext;
+
+	    /* Free unused blocks from page cache */
+	    truncate_pagecache(inode, inode->i_size);
+
+	    /* Read ei_block to remove unused blocks */
+	    bh_index = sb_bread(sb, ci->ei_block);
+	    if (!bh_index) {
+		    pr_err("failed truncating '%s'. we just lost %llu blocks\n",
+				    file->f_path.dentry->d_name.name,
+				    nr_blocks_old - inode->i_blocks);
+		    goto end;
+	    }
+	    index = (struct simplefs_file_ei_block *) bh_index->b_data;
+
+	    first_ext = simplefs_ext_search(index, inode->i_blocks - 1);
+	    /* Reserve unused block in last extent */
+	    if (inode->i_blocks - 1 != index->extents[first_ext].ee_block)
+		    first_ext++;
+
+	    for (i = first_ext; i < SIMPLEFS_MAX_EXTENTS; i++) {
+		    if (!index->extents[i].ee_start)
+			    break;
+		    put_blocks(SIMPLEFS_SB(sb), index->extents[i].ee_start,
+				    index->extents[i].ee_len);
+		    memset(&index->extents[i], 0, sizeof(struct simplefs_extent));
+	    }
+	    mark_buffer_dirty(bh_index);
+	    brelse(bh_index);
+    }
+end:
+
+    //invalidate_page_write(file, inode, page);
+    //inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (page->index));
+    //hash_shmem(inode_pages_address, mapping->host->i_ino, page->index, mapping, 1);
+    //TODO perform coherence on multiple pages
+
+    //check size 	
+    //TODO check to see if we already have it in WRITE mode 
+    if((old_i_size != inode->i_size) && inode_state->state != WRITE){
+	    //TODO perform inode size coherence here
+	    pr_info("inode size changed %d", inode->i_ino); 
+
+	    pr_info("after update inode coherence ");
+	    request_inode_write(inode->i_ino);
+	    inode_state->state = WRITE;
+
+    }
+
+
+    
+    return ret;
+
+}
+
+
+
 /*
  * Called by the VFS after writing data from a write() syscall to the page
  * cache. This functions updates inode metadata and truncates the file if
@@ -1036,7 +1131,8 @@ static int simplefs_write_end(struct file *file,
 	//check size 	
 	//TODO check to see if we already have it in write mode
 	if(old_i_size != inode->i_size){
-		//TODO perform inode size coherence here
+		//shouldn't have it in write mode, and we already
+		//have inode lock
 		request_inode_write(inode->i_ino);
 	}
 	
@@ -1798,10 +1894,10 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    down_read(&hash_inode_rwsem);//acquire write lock 2
 	    coherence_state = inode_shmem_in_hashmap(addr);
 	    if(coherence_state != NULL){
-		    down_read(&(coherence_state->rwsem)); //lock the inode  1
+		    inode_lock(coherence_state->inode);
 		    up_read(&hash_inode_rwsem); //unlock hashtable 2
 		    inode_shmem_invalidate(coherence_state, inv_argv);
-		    up_read(&(coherence_state->rwsem)); //unlock the inode 1
+		    inode_unlock(coherence_state->inode);
 
 		    pr_info("inodewas found");
 
@@ -1816,7 +1912,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 
 
 ssize_t simplefs_generic_perform_write(struct file *file,
-				struct iov_iter *i, loff_t pos)
+				struct iov_iter *i, loff_t pos, struct shmem_coherence_state * inode_state)
 {
 	struct address_space *mapping = file->f_mapping;
 	const struct address_space_operations *a_ops = mapping->a_ops;
@@ -1871,7 +1967,7 @@ again:
 
 		//lock inode here: syncs with remote invalidations
 		//local writes are already synced so we don't need to worry about slowing them down
-	    	struct shmem_coherence_state * coherence_state = update_inode_coherence(inode, WRITE);
+	    	//struct shmem_coherence_state * coherence_state = update_inode_coherence(inode, WRITE);
 
 		struct page_lock_status temp = acquire_page_lock(file, inode, currentpage, inode_pages_address, mapping, WRITE);
 		//if page lock was acquired in write mode, then we have to update the remote state
@@ -1881,7 +1977,6 @@ again:
 				&page, &fsdata);
 
 		if (unlikely(status < 0)){
-			up_read(&(coherence_state->rwsem));
 			break;
 		}
 
@@ -1893,8 +1988,8 @@ again:
 
 		flush_dcache_page(page);
 
-		status = a_ops->write_end(file, mapping, pos, bytes, copied,
-						page, fsdata);
+		status = simplefs_modified_write_end(file, mapping, pos, bytes, copied,
+						page, fsdata, inode_state);
 		
 
 		//unlocking the page here
@@ -1904,8 +1999,6 @@ again:
 			up_read(&(temp.state->rwsem));
 		}
 
-		//unlock inode here
-		up_read(&(coherence_state->rwsem));
 
 		if (unlikely(status < 0))
 			break;
@@ -1936,7 +2029,7 @@ again:
 	return written ? written : status;
 }
 
-ssize_t __simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
+ssize_t __simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *from, struct shmem_coherence_state * inode_state)
 {
 	struct file *file = iocb->ki_filp;
 	struct address_space * mapping = file->f_mapping;
@@ -1957,7 +2050,8 @@ ssize_t __simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *
 
 	if (iocb->ki_flags & IOCB_DIRECT) {
 		loff_t pos, endbyte;
-
+	
+		pr_err("DONT SUPPORT DIRECT WRITES");
 		written = generic_file_direct_write(iocb, from);
 		/*
 		 * If the write stopped short of completing, fall back to
@@ -1969,7 +2063,7 @@ ssize_t __simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *
 		if (written < 0 || !iov_iter_count(from) || IS_DAX(inode))
 			goto out;
 
-		status = simplefs_generic_perform_write(file, from, pos = iocb->ki_pos);
+		status = simplefs_generic_perform_write(file, from, pos = iocb->ki_pos, inode_state);
 		/*
 		 * If generic_perform_write() returned a synchronous error
 		 * then we want to return the number of bytes which were
@@ -2001,7 +2095,7 @@ ssize_t __simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *
 			 */
 		}
 	} else {
-		written = simplefs_generic_perform_write(file, from, iocb->ki_pos);
+		written = simplefs_generic_perform_write(file, from, iocb->ki_pos, inode_state);
 		if (likely(written > 0))
 			iocb->ki_pos += written;
 	}
@@ -2016,10 +2110,17 @@ ssize_t simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *fr
 	struct inode *inode = file->f_mapping->host;
 	ssize_t ret;
 
+	down_read(&hash_inode_rwsem); //hash inode lock 1
+	//TODO THIS ISN'T LOCKED
+	uintptr_t inode_pages_address = inode_address[inode->i_ino];
+	struct shmem_coherence_state * inode_state = inode_shmem_in_hashmap(inode_pages_address);
+
 	inode_lock(inode);
+	up_read(&hash_inode_rwsem); //hash inode lock 1
+
 	ret = generic_write_checks(iocb, from);
 	if (ret > 0)
-		ret = __simplefs_generic_file_write_iter(iocb, from);
+		ret = __simplefs_generic_file_write_iter(iocb, from, inode_state);
 	inode_unlock(inode);
 
 	if (ret > 0)

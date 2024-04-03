@@ -134,6 +134,27 @@ extern uint32_t simplefs_ext_search(struct simplefs_file_ei_block *index,
 extern struct rw_semaphore hash_page_rwsem;
 extern struct rw_semaphore hash_inode_rwsem;
 
+struct shmem_coherence_state {
+    	unsigned long shmem_addr;
+	unsigned long i_ino;
+	struct inode * inode;
+	int pagenum;
+	int state;
+	int page_locked_state;
+	int table_locked_state;
+
+	struct address_space *mapping;
+	struct hlist_node link;
+	struct rw_semaphore rwsem;
+};
+
+
+//used to be static
+extern struct shmem_coherence_state * update_inode_coherence(struct inode * inode, int reqstate);
+extern struct shmem_coherence_state * inode_shmem_in_hashmap(unsigned long inode_addr);
+extern void inode_hash_shmem(unsigned long inode_addr, int inodenum, struct inode * inode, int state);
+extern bool request_inode_write(unsigned long ino);
+
 u64 shmem_address_check(void *addr, unsigned long size);
 u64 testing_invalidate_page_callback(void *addr, void *inv_argv);
 
