@@ -177,7 +177,7 @@ static struct shmem_coherence_state * inode_shmem_in_hashmap(unsigned long inode
 
 extern unsigned long shmem_address[10];
 extern unsigned long inode_address[10];
-static bool invalidate_page_write(struct file *file, struct inode * inode, int page);
+static bool invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page);
 
 
 struct page_lock_status {
@@ -752,7 +752,7 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 
 
 //TODO changed this so that it doesn't need page pointer
-static bool invalidate_page_write(struct file *file, struct inode * inode, int page){
+static bool invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page){
 
 	//pr_info("invalidate_page_write 1");
         //struct page * testp = pagep;
@@ -789,7 +789,7 @@ static bool invalidate_page_write(struct file *file, struct inode * inode, int p
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
-        //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
         
 	//int i;
         //for(i = 0; i < 20; i++){
@@ -1803,17 +1803,20 @@ again:
 
 		struct page_lock_status temp = acquire_page_lock(file, inode, currentpage, inode_pages_address, mapping, WRITE);
 		//if page lock was acquired in write mode, then we have to update the remote state
-		invalidate_page_write(file, inode, currentpage);
 
 		status = a_ops->write_begin(file, mapping, pos, bytes, flags,
 						&page, &fsdata);
-		if (unlikely(status < 0))
+
+				if (unlikely(status < 0))
+
 			break;
 
 		if (mapping_writably_mapped(mapping))
 			flush_dcache_page(page);
 
 		copied = iov_iter_copy_from_user_atomic(page, i, offset, bytes);
+		invalidate_page_write(page, file, inode, currentpage);
+
 		flush_dcache_page(page);
 
 		status = a_ops->write_end(file, mapping, pos, bytes, copied,
