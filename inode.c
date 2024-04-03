@@ -38,19 +38,23 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
     if (ino >= sbi->nr_inodes)
         return ERR_PTR(-EINVAL);
 
-    down_write(&hash_inode_rwsem); //hash inode lock 1
+    //down_write(&hash_inode_rwsem); //hash inode lock 1
+    pr_info("past inode write lock", ino);
 
 
     /* Get a locked inode from Linux */
     inode = iget_locked(sb, ino);
     if (!inode){
-	    up_write(&hash_inode_rwsem);
+	    pr_info("failed to get inode");
+	    //up_write(&hash_inode_rwsem);
         return ERR_PTR(-ENOMEM);
 	}
 
     /* If inode is in cache, return it */
     if (!(inode->i_state & I_NEW)){
-	    up_write(&hash_inode_rwsem);
+	    pr_info("inode in cache");
+
+	    //up_write(&hash_inode_rwsem);
         return inode;
     }
 
@@ -59,15 +63,19 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
     inode_pages_address = inode_address[ino];
 
 
-    struct shmem_coherence_state * old_state = inode_shmem_in_hashmap(inode_pages_address);
-    if(old_state != NULL){
-	pr_err("INODE BEING REUSED");
-    }
+    //struct shmem_coherence_state * old_state = inode_shmem_in_hashmap(inode_pages_address);
+//pr_info("inode hashtable check");
 
-    inode_hash_shmem(inode_pages_address, ino, inode, 1); //1 for WRITE
-    request_inode_write(ino);
-	
-    up_write(&hash_inode_rwsem); //unlock hashtable
+   // if(old_state != NULL){
+	//pr_err("INODE BEING REUSED");
+    //}
+
+    //inode_hash_shmem(inode_pages_address, ino, inode, 1); //1 for WRITE
+//pr_info("add inode to hashtable");
+
+ //   request_inode_write(ino);
+pr_info("request inode write permission");	
+  //  up_write(&hash_inode_rwsem); //unlock hashtable
 
 
     ci = SIMPLEFS_INODE(inode);

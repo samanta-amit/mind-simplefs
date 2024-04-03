@@ -2110,13 +2110,18 @@ ssize_t simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *fr
 	struct inode *inode = file->f_mapping->host;
 	ssize_t ret;
 
-	down_read(&hash_inode_rwsem); //hash inode lock 1
-	//TODO THIS ISN'T LOCKED
+	down_write(&hash_inode_rwsem); //hash inode lock 1
+	inode_lock(inode);
 	uintptr_t inode_pages_address = inode_address[inode->i_ino];
 	struct shmem_coherence_state * inode_state = inode_shmem_in_hashmap(inode_pages_address);
+	
+	if(inode_state == NULL){
+		inode_hash_shmem(inode_pages_address, inode->i_ino, inode, 2); //2 for WRITE
+		request_inode_write(inode->i_ino);
+	}
 
-	inode_lock(inode);
-	up_read(&hash_inode_rwsem); //hash inode lock 1
+
+	up_write(&hash_inode_rwsem); //hash inode lock 1
 
 	ret = generic_write_checks(iocb, from);
 	if (ret > 0)
