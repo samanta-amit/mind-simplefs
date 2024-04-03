@@ -26,12 +26,13 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
     uint32_t inode_shift = ino % SIMPLEFS_INODES_PER_BLOCK;
     int ret;
 
-    //pr_info("getting inode");
-    //pr_info("getting inode");
-    //pr_info("getting inode");
-    //pr_info("getting inode");
-    //pr_info("getting inode");
-    //pr_info("getting inode");
+    pr_info("getting inode %d ", ino);
+    pr_info("getting inode %d ", ino);
+    pr_info("getting inode %d ", ino);
+    pr_info("getting inode %d ", ino);
+    pr_info("getting inode %d ", ino);
+    pr_info("getting inode %d ", ino);
+    pr_info("getting inode %d ", ino);
 
     /* Fail if ino is out of range */
     if (ino >= sbi->nr_inodes)
@@ -42,13 +43,16 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
 
     /* Get a locked inode from Linux */
     inode = iget_locked(sb, ino);
-    if (!inode)
+    if (!inode){
+	    up_write(&hash_inode_rwsem);
         return ERR_PTR(-ENOMEM);
+	}
 
     /* If inode is in cache, return it */
-    if (!(inode->i_state & I_NEW))
+    if (!(inode->i_state & I_NEW)){
 	    up_write(&hash_inode_rwsem);
         return inode;
+    }
 
     //add the inode to the hashtable
     uintptr_t inode_pages_address;
