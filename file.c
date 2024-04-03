@@ -186,10 +186,6 @@ struct page_lock_status {
 	int table_lock;
 };
 
-//0 if no write lock
-//1 if page lock
-//2 if hashtable lock
-//3 if both
 struct page_lock_status acquire_page_lock(struct file * file, struct inode * inode, int currentpage, uintptr_t inode_pages_address, struct address_space * mapping, int mode){
 	//acquire read lock for the hashtable
 	down_read(&hash_page_rwsem);
@@ -199,6 +195,7 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 	int table_write_locked = 0;
 	int page_write_locked = 0;
 
+	//surrounded by hashmap readlock
 	struct shmem_coherence_state * coherence_state = shmem_in_hashmap(inode_pages_address);
 	if(coherence_state == NULL){
 		up_read(&hash_page_rwsem);
@@ -206,14 +203,14 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 		//acquire hashtable in write mode to add the new page
 		down_write(&hash_page_rwsem);
 		table_write_locked = 2;
+
+		//surrounded by hashmap writelock
 		coherence_state = shmem_in_hashmap(inode_pages_address);
 		if(coherence_state == NULL){
 
-			//page not in hashmap
-			//TODO add page lock acquire before adding to the hashtable
+			//page not in hashmap add it (and acquire read lock)
 			//TODO make sure currentpage is correct
 			hash_shmem(inode_pages_address, mapping->host->i_ino, currentpage, mapping, mode);
-			//pr_info("page not in hashmap adding with state %c", reqstate);
 
 			coherence_state = shmem_in_hashmap(inode_pages_address);
 			if(coherence_state == NULL){
@@ -223,7 +220,7 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 			up_write(&hash_page_rwsem);
 
 			//TODO make sure current page is correct
-			invalidate_page_write(file, inode, currentpage);
+			//invalidate_page_write(file, inode, currentpage);
 
 		}else{
 			//could think about acquiring it in read mode and doing the jumping around thing again
@@ -237,7 +234,7 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 				up_read(&hash_page_rwsem);
 				page_write_locked = 1;
 				//TODO make sure current page is correct
-				invalidate_page_write(file, inode, currentpage);
+				//invalidate_page_write(file, inode, currentpage);
 				coherence_state->state = mode;
 			}
 		}
@@ -249,7 +246,7 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 			up_read(&hash_page_rwsem);
 			page_write_locked = 1;
 			//TODO make sure current page is correct
-			invalidate_page_write(file, inode, currentpage);
+			//invalidate_page_write(file, inode, currentpage);
 			coherence_state->state = mode;
 		}
 		up_read(&hash_page_rwsem);
@@ -693,8 +690,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 				(PAGE_SIZE * (page->index));
 
 	struct page_lock_status temp = acquire_page_lock(file, mapping->host, page->index, inode_pages_address, mapping, READ);
-	//page is locked here
-	
+	//page is locked here in either read or write mode
 
 	//page is locked for write now should always be locked for write
 	//because we should always be updating the state when we get here
@@ -738,7 +734,6 @@ static int simplefs_readpage(struct file *file, struct page *page)
 		up_write(&(temp.state->rwsem));
 	}else{
 		up_read(&(temp.state->rwsem));
-
 	}
 
 
@@ -1685,6 +1680,9 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 
 	pr_info("shmem invalidate");
 	void *pagep;
+
+	//acquire write lock on page
+
 	struct address_space *mapping = coherence_state->mapping;
 
 	//lock hashtable	
@@ -1704,22 +1702,18 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		struct page * testp = pagep;
 		
 		//perform page invalidation stuff here
-		//pr_info("shmem_invalidate_page start");
 		shmem_invalidate_page_write(coherence_state->mapping, testp, inv_argv);
-
-		//pr_info("shmem_invalidate_page end");
-
 		ClearPageUptodate(testp);
+		coherence_state->state = 0;
 	}else{
-		//pr_info("page no longer in page cache");
+		pr_info("ERROR page no longer in page cache");
 	}
 
 	//delete page from the hashmap
-	hash_del(&(coherence_state->link));
+	//hash_del(&(coherence_state->link));
 
 	spin_unlock_irq(&mapping->tree_lock);
         //spin_unlock(&shmem_states_lock);
-
 	return true;
 
 }
@@ -1728,12 +1722,20 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
     pr_info("invalidate page callback called address %ld", addr);
-       struct shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
-    if(coherence_state != NULL){
-	  shmem_invalidate(coherence_state, inv_argv);
-	pr_info("page was found");
 
+
+    down_read(&hash_page_rwsem);
+    struct shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
+
+    if(coherence_state != NULL){
+
+	    down_write(&(coherence_state->rwsem)); //lock the page
+	    up_read(&hash_page_rwsem); //unlock the hashtable now
+	    shmem_invalidate(coherence_state, inv_argv);
+	    up_write(&(coherence_state->rwsem)); //lock the page
     }else{
+	    up_read(&hash_page_rwsem);
+
 	    //pr_info("page no longer in hash table");
 	    coherence_state = inode_shmem_in_hashmap(addr);
 	    if(coherence_state != NULL){
@@ -1743,8 +1745,6 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    }else{
 		    pr_info("memory wasn't ours");
 	    }
-
-
     }
 
     return 1024;
@@ -1802,6 +1802,9 @@ again:
 
 
 		struct page_lock_status temp = acquire_page_lock(file, inode, currentpage, inode_pages_address, mapping, WRITE);
+		//if page lock was acquired in write mode, then we have to update the remote state
+		invalidate_page_write(file, inode, currentpage);
+
 		status = a_ops->write_begin(file, mapping, pos, bytes, flags,
 						&page, &fsdata);
 		if (unlikely(status < 0))
@@ -1815,7 +1818,6 @@ again:
 
 		status = a_ops->write_end(file, mapping, pos, bytes, copied,
 						page, fsdata);
-
 		//unlocking the page here
 		if(temp.page_lock){
 			up_write(&(temp.state->rwsem));
