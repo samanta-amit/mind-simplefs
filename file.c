@@ -1627,10 +1627,10 @@ u64 shmem_address_check(void *addr, unsigned long size)
     }else{
 	    //pr_info("shmem was not in the hashtable");
     }
-    down_read(&hash_inode_rwsem);
+    //down_read(&hash_inode_rwsem);
 	//check to see if it is in the inode hashmap
     coherence_state = inode_shmem_in_hashmap(addr);
-    up_read(&hash_inode_rwsem);
+    //up_read(&hash_inode_rwsem);
     //TODO should we hold lock longer?
     if(coherence_state != NULL){
 	    pr_info("shmem found in inode hash table");
@@ -1891,18 +1891,18 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    up_read(&hash_page_rwsem);
 
 	    //pr_info("page no longer in hash table");
-	    down_read(&hash_inode_rwsem);//acquire write lock 2
+	    //down_read(&hash_inode_rwsem);//acquire write lock 2
 	    coherence_state = inode_shmem_in_hashmap(addr);
 	    if(coherence_state != NULL){
 		    inode_lock(coherence_state->inode);
-		    up_read(&hash_inode_rwsem); //unlock hashtable 2
+		    //up_read(&hash_inode_rwsem); //unlock hashtable 2
 		    inode_shmem_invalidate(coherence_state, inv_argv);
 		    inode_unlock(coherence_state->inode);
 
 		    pr_info("inodewas found");
 
 	    }else{
-		    up_read(&hash_inode_rwsem); //unlock hashtable 2
+		    //up_read(&hash_inode_rwsem); //unlock hashtable 2
 		    pr_err("THIS IS PROBABLY BAD");
 	    }
     }
@@ -2110,18 +2110,22 @@ ssize_t simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *fr
 	struct inode *inode = file->f_mapping->host;
 	ssize_t ret;
 
-	down_write(&hash_inode_rwsem); //hash inode lock 1
+	//down_write(&hash_inode_rwsem); //hash inode lock 1
 	inode_lock(inode);
 	uintptr_t inode_pages_address = inode_address[inode->i_ino];
 	struct shmem_coherence_state * inode_state = inode_shmem_in_hashmap(inode_pages_address);
 	
 	if(inode_state == NULL){
 		inode_hash_shmem(inode_pages_address, inode->i_ino, inode, 2); //2 for WRITE
+		inode_state = inode_shmem_in_hashmap(inode_pages_address);
+		if(inode_state == NULL){
+			pr_err("INODE HASHMAP PROBLEM");
+		}
 		request_inode_write(inode->i_ino);
 	}
 
 
-	up_write(&hash_inode_rwsem); //hash inode lock 1
+	//up_write(&hash_inode_rwsem); //hash inode lock 1
 
 	ret = generic_write_checks(iocb, from);
 	if (ret > 0)
