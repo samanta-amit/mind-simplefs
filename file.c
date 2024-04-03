@@ -117,7 +117,7 @@ static void inode_hash_shmem(unsigned long inode_addr, int inodenum, struct inod
 	init_rwsem(&(shmem_state->rwsem));
 
 	//acquire the page in writemode	
-	down_write(&(shmem_state->rwsem));
+	down_read(&(shmem_state->rwsem));
 
 
 
@@ -641,10 +641,12 @@ static struct shmem_coherence_state * update_inode_coherence(struct inode * inod
 			}
 		}else{
 			//page was added to hashtable while we were waiting
-			down_write(&(coherence_state->rwsem)); //acquire inode write lock 
+			down_read(&(coherence_state->rwsem)); //acquire inode write lock 
 			up_write(&hash_inode_rwsem); //release table lock 2
 			pr_info("inode in hashmap, updating state %c", reqstate);
 
+
+			//TODO make atomic
 			if(coherence_state->state == WRITE){
 				return;
 			}else{
@@ -655,10 +657,11 @@ static struct shmem_coherence_state * update_inode_coherence(struct inode * inod
 
 		}
 	}else{
-		down_write(&(coherence_state->rwsem));
+		down_read(&(coherence_state->rwsem));
 		up_read(&hash_inode_rwsem); //unlock table 1
 		pr_info("inode in hashmap, updating state %c", reqstate);
 
+		//TODO make atomic
 		if(coherence_state->state == WRITE){
 			return;
 		}else{
@@ -1795,10 +1798,10 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    down_read(&hash_inode_rwsem);//acquire write lock 2
 	    coherence_state = inode_shmem_in_hashmap(addr);
 	    if(coherence_state != NULL){
-		    down_write(&(coherence_state->rwsem)); //lock the inode  1
+		    down_read(&(coherence_state->rwsem)); //lock the inode  1
 		    up_read(&hash_inode_rwsem); //unlock hashtable 2
 		    inode_shmem_invalidate(coherence_state, inv_argv);
-		    up_write(&(coherence_state->rwsem)); //unlock the inode 1
+		    up_read(&(coherence_state->rwsem)); //unlock the inode 1
 
 		    pr_info("inodewas found");
 
@@ -1878,7 +1881,7 @@ again:
 				&page, &fsdata);
 
 		if (unlikely(status < 0)){
-			up_write(&(coherence_state->rwsem));
+			up_read(&(coherence_state->rwsem));
 			break;
 		}
 
@@ -1902,7 +1905,7 @@ again:
 		}
 
 		//unlock inode here
-		up_write(&(coherence_state->rwsem));
+		up_read(&(coherence_state->rwsem));
 
 		if (unlikely(status < 0))
 			break;
