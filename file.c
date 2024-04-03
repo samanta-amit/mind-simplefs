@@ -1481,7 +1481,9 @@ u64 shmem_address_check(void *addr, unsigned long size)
     pr_info("shmem address callback 0x%lx", addr);
 
 	//TODO this should be surrounded by locks
+    down_read(&hash_page_rwsem);
     struct  shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
+    up_read(&hash_page_rwsem);
     if(coherence_state != NULL){
 	    //pr_info("shmem was in hash table");
 	    //pr_info("shmem address %ld", coherence_state->shmem_addr);
@@ -1809,17 +1811,22 @@ again:
 			break;
 		}
 
+		pr_err("before changes");
 		//do locking stuff here
 		unsigned int currentpage = pos / PAGE_SIZE;
-		struct inode * inode = mapping->host->i_ino;
-
+		struct inode * inode = mapping->host;
+		pr_err("after inode pointer");	
+		pr_err("page index is %d", currentpage);
 		uintptr_t inode_pages_address;
 		inode_pages_address = shmem_address[inode->i_ino] +
 			(PAGE_SIZE * (currentpage));
 
+		pr_err("after inode page address");
+
 
 		struct page_lock_status temp = acquire_page_lock(file, inode, currentpage, inode_pages_address, mapping, WRITE);
 		//if page lock was acquired in write mode, then we have to update the remote state
+		pr_err("after acquire page lock");
 
 		status = a_ops->write_begin(file, mapping, pos, bytes, flags,
 						&page, &fsdata);
