@@ -187,8 +187,11 @@ struct page_lock_status {
 };
 
 struct page_lock_status acquire_page_lock(struct file * file, struct inode * inode, int currentpage, uintptr_t inode_pages_address, struct address_space * mapping, int mode){
+	pr_err("acquire page lock for page %d", currentpage);
 	//acquire read lock for the hashtable
 	down_read(&hash_page_rwsem);
+	pr_err("after we got lock for page %d", currentpage);
+
 	//uintptr_t inode_pages_address = shmem_address[inode->i_ino] +
 	//	(PAGE_SIZE * (page));
 
@@ -197,7 +200,10 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 
 	//surrounded by hashmap readlock
 	struct shmem_coherence_state * coherence_state = shmem_in_hashmap(inode_pages_address);
+
 	if(coherence_state == NULL){
+		pr_err("page %d not found in hash table", currentpage);
+
 		up_read(&hash_page_rwsem);
 
 		//acquire hashtable in write mode to add the new page
@@ -206,11 +212,14 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 
 		//surrounded by hashmap writelock
 		coherence_state = shmem_in_hashmap(inode_pages_address);
+
 		if(coherence_state == NULL){
 
+			pr_err("page %d STILL not found in hash table", currentpage);
 			//page not in hashmap add it (and acquire read lock)
 			//TODO make sure currentpage is correct
 			hash_shmem(inode_pages_address, mapping->host->i_ino, currentpage, mapping, mode);
+			pr_err("page %d was added to hash table", currentpage);
 
 			coherence_state = shmem_in_hashmap(inode_pages_address);
 			if(coherence_state == NULL){
@@ -223,12 +232,14 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 			//invalidate_page_write(file, inode, currentpage);
 
 		}else{
+			pr_err("page %d was now found in hashtable", currentpage);
 			//could think about acquiring it in read mode and doing the jumping around thing again
 			down_write(&(coherence_state->rwsem));
 			page_write_locked = 1;
 			up_write(&hash_page_rwsem);
 
 			if(coherence_state->state < mode){
+				pr_err("updating the state for page %d", currentpage);
 				up_read(&(coherence_state->rwsem));
 				down_write(&(coherence_state->rwsem));
 				up_read(&hash_page_rwsem);
@@ -236,10 +247,13 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 				//TODO make sure current page is correct
 				//invalidate_page_write(file, inode, currentpage);
 				coherence_state->state = mode;
+
 			}
 		}
 	}else{
 		down_read(&(coherence_state->rwsem));
+		pr_err("page %d was found in hashtable", currentpage);
+
 		if(coherence_state->state < mode){
 			up_read(&(coherence_state->rwsem));
 			down_write(&(coherence_state->rwsem));
@@ -248,6 +262,8 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 			//TODO make sure current page is correct
 			//invalidate_page_write(file, inode, currentpage);
 			coherence_state->state = mode;
+			pr_err("upgrading state of page %d", currentpage);
+
 		}
 		up_read(&hash_page_rwsem);
 	}
@@ -754,7 +770,7 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 //TODO changed this so that it doesn't need page pointer
 static bool invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page){
 
-	//pr_info("invalidate_page_write 1");
+	pr_info("invalidate_page_write 1");
         //struct page * testp = pagep;
         uintptr_t inode_pages_address;
         int r;
@@ -1464,6 +1480,7 @@ u64 shmem_address_check(void *addr, unsigned long size)
     pr_info("shmem address callback %ld", addr);
     pr_info("shmem address callback 0x%lx", addr);
 
+	//TODO this should be surrounded by locks
     struct  shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
     if(coherence_state != NULL){
 	    //pr_info("shmem was in hash table");
@@ -1923,7 +1940,7 @@ ssize_t __simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *
 			 */
 		}
 	} else {
-		written = generic_perform_write(file, from, iocb->ki_pos);
+		written = simplefs_generic_perform_write(file, from, iocb->ki_pos);
 		if (likely(written > 0))
 			iocb->ki_pos += written;
 	}
