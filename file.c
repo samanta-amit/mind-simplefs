@@ -1789,7 +1789,7 @@ static bool inode_shmem_invalidate(struct shmem_coherence_state * coherence_stat
 	//lock hashtable	
 
 	//lock inode 
-	down_write((&(inode->i_rwsem)));		
+	//down_write((&(inode->i_rwsem)));		
 	shmem_invalidate_inode_write(inode, inv_argv);
 	//TODO ALSO INCLUDE READ CASE
 	//we are now invalid
@@ -1815,7 +1815,7 @@ static bool inode_shmem_invalidate(struct shmem_coherence_state * coherence_stat
 	spin_unlock(&dummy_page_lock);
 
 	//on access gained, unlock inode		
-	up_write((&(inode->i_rwsem)));
+	//up_write((&(inode->i_rwsem)));
 	pr_info("outside of the lock");
 
 
