@@ -184,6 +184,7 @@ struct page_lock_status {
 	struct shmem_coherence_state * state;
 	int page_lock;
 	int table_lock;
+	int old_state;
 };
 
 struct page_lock_status acquire_page_lock(struct file * file, struct inode * inode, int currentpage, uintptr_t inode_pages_address, struct address_space * mapping, int mode){
@@ -263,9 +264,10 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 
 	//TODO is this okay? 	
 	struct page_lock_status temp;
-	temp.state = old_state;
+	temp.state = coherence_state;
 	temp.page_lock = page_write_locked;
 	temp.table_lock = table_write_locked;
+	temp.old_state = old_state;
 	return temp; 
 }
 
@@ -1824,7 +1826,7 @@ again:
 		status = a_ops->write_begin(file, mapping, pos, bytes, flags,
 						&page, &fsdata);
 
-				if (unlikely(status < 0))
+		if (unlikely(status < 0))
 
 			break;
 
@@ -1832,7 +1834,7 @@ again:
 			flush_dcache_page(page);
 
 		copied = iov_iter_copy_from_user_atomic(page, i, offset, bytes);
-		if(temp.state <= READ){
+		if(temp.old_state <= READ){
 			invalidate_page_write(page, file, inode, currentpage);
 		}
 
