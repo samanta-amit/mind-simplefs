@@ -11,9 +11,6 @@
 static const struct inode_operations simplefs_inode_ops;
 static const struct inode_operations symlink_inode_ops;
 
-extern unsigned long inode_address[10];
-
-
 /* Get inode ino from disk */
 struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
 {
@@ -26,57 +23,25 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
     uint32_t inode_shift = ino % SIMPLEFS_INODES_PER_BLOCK;
     int ret;
 
-    pr_info("getting inode %d ", ino);
-    pr_info("getting inode %d ", ino);
-    pr_info("getting inode %d ", ino);
-    pr_info("getting inode %d ", ino);
-    pr_info("getting inode %d ", ino);
-    pr_info("getting inode %d ", ino);
-    pr_info("getting inode %d ", ino);
+    //pr_info("getting inode");
+    //pr_info("getting inode");
+    //pr_info("getting inode");
+    //pr_info("getting inode");
+    //pr_info("getting inode");
+    //pr_info("getting inode");
 
     /* Fail if ino is out of range */
     if (ino >= sbi->nr_inodes)
         return ERR_PTR(-EINVAL);
 
-    //down_write(&hash_inode_rwsem); //hash inode lock 1
-    pr_info("past inode write lock", ino);
-
-
     /* Get a locked inode from Linux */
     inode = iget_locked(sb, ino);
-    if (!inode){
-	    pr_info("failed to get inode");
-	    //up_write(&hash_inode_rwsem);
+    if (!inode)
         return ERR_PTR(-ENOMEM);
-	}
 
     /* If inode is in cache, return it */
-    if (!(inode->i_state & I_NEW)){
-	    pr_info("inode in cache");
-
-	    //up_write(&hash_inode_rwsem);
+    if (!(inode->i_state & I_NEW))
         return inode;
-    }
-
-    //add the inode to the hashtable
-    uintptr_t inode_pages_address;
-    inode_pages_address = inode_address[ino];
-
-
-    //struct shmem_coherence_state * old_state = inode_shmem_in_hashmap(inode_pages_address);
-//pr_info("inode hashtable check");
-
-   // if(old_state != NULL){
-	//pr_err("INODE BEING REUSED");
-    //}
-
-    //inode_hash_shmem(inode_pages_address, ino, inode, 1); //1 for WRITE
-//pr_info("add inode to hashtable");
-
- //   request_inode_write(ino);
-pr_info("request inode write permission");	
-  //  up_write(&hash_inode_rwsem); //unlock hashtable
-
 
     ci = SIMPLEFS_INODE(inode);
     /* Read inode from disk and initialize */
@@ -988,6 +953,7 @@ static int simplefs_dentry_revalidate(struct dentry * test, unsigned int test2) 
 const struct dentry_operations simplefs_dentry_ops = {
 	.d_revalidate = simplefs_dentry_revalidate,
 };
+
 
 
 
