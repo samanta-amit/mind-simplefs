@@ -95,7 +95,7 @@ static void hash_shmem(unsigned long shmem_addr, int inodenum, int pagenum, stru
 	init_rwsem(&(shmem_state->rwsem));
 
 	//acquire the page in readmode	
-	down_read(&(shmem_state->rwsem));
+	down_write(&(shmem_state->rwsem));
 
 	//spin_lock(&shmem_states_lock);
 	hash_add(shmem_states, &(shmem_state->link), shmem_addr);
@@ -216,9 +216,10 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 		if(coherence_state == NULL){
 
 			pr_err("page %d STILL not found in hash table", currentpage);
-			//page not in hashmap add it (and acquire read lock)
+			//page not in hashmap add it (and acquire write lock)
 			//TODO make sure currentpage is correct
 			hash_shmem(inode_pages_address, mapping->host->i_ino, currentpage, mapping, mode);
+			page_write_locked = 1;
 			pr_err("page %d was added to hash table", currentpage);
 
 			coherence_state = shmem_in_hashmap(inode_pages_address);
@@ -226,7 +227,6 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 				pr_err("THIS SHOULDN'T HAPPEN");
 			}
 			//release hashtable so it doesn't have to wait any longer
-			up_write(&hash_page_rwsem);
 
 			//TODO make sure current page is correct
 			//invalidate_page_write(file, inode, currentpage);
@@ -236,36 +236,28 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 			//could think about acquiring it in read mode and doing the jumping around thing again
 			down_write(&(coherence_state->rwsem));
 			page_write_locked = 1;
-			up_write(&hash_page_rwsem);
 
 			if(coherence_state->state < mode){
 				pr_err("updating the state for page %d", currentpage);
-				up_read(&(coherence_state->rwsem));
-				down_write(&(coherence_state->rwsem));
-				up_read(&hash_page_rwsem);
-				page_write_locked = 1;
 				//TODO make sure current page is correct
 				//invalidate_page_write(file, inode, currentpage);
 				coherence_state->state = mode;
 
 			}
 		}
+		up_write(&hash_page_rwsem);
 	}else{
-		down_read(&(coherence_state->rwsem));
+		down_write(&(coherence_state->rwsem));
+		page_write_locked = 1;
 		pr_err("page %d was found in hashtable", currentpage);
-
+		up_read(&hash_page_rwsem);
 		if(coherence_state->state < mode){
-			up_read(&(coherence_state->rwsem));
-			down_write(&(coherence_state->rwsem));
-			up_read(&hash_page_rwsem);
-			page_write_locked = 1;
 			//TODO make sure current page is correct
 			//invalidate_page_write(file, inode, currentpage);
 			coherence_state->state = mode;
 			pr_err("upgrading state of page %d", currentpage);
-
+		}else{
 		}
-		up_read(&hash_page_rwsem);
 	}
 
 	//TODO is this okay? 	
