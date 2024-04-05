@@ -197,7 +197,7 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 
 	int table_write_locked = 0;
 	int page_write_locked = 0;
-
+	int old_state = -1;
 	//surrounded by hashmap readlock
 	struct shmem_coherence_state * coherence_state = shmem_in_hashmap(inode_pages_address);
 
@@ -236,7 +236,7 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 			//could think about acquiring it in read mode and doing the jumping around thing again
 			down_write(&(coherence_state->rwsem));
 			page_write_locked = 1;
-
+			old_state = coherence_state->state;	
 			if(coherence_state->state < mode){
 				pr_err("updating the state for page %d", currentpage);
 				//TODO make sure current page is correct
@@ -251,6 +251,7 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 		page_write_locked = 1;
 		pr_err("page %d was found in hashtable", currentpage);
 		up_read(&hash_page_rwsem);
+		old_state = coherence_state->state;
 		if(coherence_state->state < mode){
 			//TODO make sure current page is correct
 			//invalidate_page_write(file, inode, currentpage);
@@ -262,7 +263,7 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 
 	//TODO is this okay? 	
 	struct page_lock_status temp;
-	temp.state = coherence_state;
+	temp.state = old_state;
 	temp.page_lock = page_write_locked;
 	temp.table_lock = table_write_locked;
 	return temp; 
@@ -1831,7 +1832,9 @@ again:
 			flush_dcache_page(page);
 
 		copied = iov_iter_copy_from_user_atomic(page, i, offset, bytes);
-		invalidate_page_write(page, file, inode, currentpage);
+		if(temp.state <= READ){
+			invalidate_page_write(page, file, inode, currentpage);
+		}
 
 		flush_dcache_page(page);
 
