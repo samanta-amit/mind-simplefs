@@ -250,7 +250,7 @@ static int mind_fetch_page_write(
         int r;
         unsigned long start_time = jiffies;
 
-	spin_lock(&dummy_page_lock);
+	//spin_lock(&dummy_page_lock);
 
         ret_buf.data_size = PAGE_SIZE;
         ret_buf.data = page_dma_address;
@@ -261,7 +261,7 @@ static int mind_fetch_page_write(
         wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
         BUG_ON(!wait_node);
 	
-	spin_unlock(&dummy_page_lock);
+	//spin_unlock(&dummy_page_lock);
 
         //mind_pr_cache_dir_state(
         //        "BEFORFE PFAULT ACK/NACK",
@@ -1554,7 +1554,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 	struct address_space *mapping = coherence_state->mapping;
 
 	//lock hashtable	
-	spin_lock(&shmem_states_lock);
+	//spin_lock(&shmem_states_lock);
 
 	//lock page tree
 	spin_lock_irq(&mapping->tree_lock);
@@ -1581,10 +1581,12 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 	}
 
 	//delete page from the hashmap
+	spin_lock(&shmem_states_lock);
 	hash_del(&(coherence_state->link));
+	spin_unlock(&shmem_states_lock);
 
 	spin_unlock_irq(&mapping->tree_lock);
-        spin_unlock(&shmem_states_lock);
+        //spin_unlock(&shmem_states_lock);
 
 	return true;
 
