@@ -1,19 +1,293 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+/*
 #include <linux/buffer_head.h>
 #include <linux/fs.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
-
+#include <linux/spinlock.h>
 #include "bitmap.h"
 #include "simplefs.h"
+*/
+
+
+
+#include <linux/buffer_head.h>
+#include <linux/fs.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/mpage.h>
+#include <linux/uio.h>
+#include <linux/hashtable.h>
+#include <linux/slab.h>
+#include <linux/spinlock.h>
+#include <linux/rwsem.h>
+#include "bitmap.h"
+#include <../../include/disagg/cnthread_disagg.h>
+#include <../../include/disagg/exec_disagg.h>
+#include <../../include/disagg/fault_disagg.h>
+#include <../../mm/internal.h>
+#include <linux/mm.h>
+#include <linux/mm_types.h>
+#include <linux/init.h>
+#include <linux/threads.h>
+#include <linux/mm.h>		/* for struct page */
+#include <linux/pagemap.h>
+#include <asm/paravirt.h>
+
+//for inode_to_bdi
+#include<linux/backing-dev.h>
+
+#include <../../roce_modules/roce_for_disagg/roce_disagg.h>
+#include <asm/traps.h>
+#include <../include/disagg/kshmem_disagg.h>
+#include <linux/swap.h> /* for the mark_page_accessed function*/
+
+#include "simplefs.h"
+
+
+
+
 
 static const struct inode_operations simplefs_inode_ops;
 static const struct inode_operations symlink_inode_ops;
 
+
+extern unsigned long shmem_address[10];
+extern unsigned long inode_address[10];
+extern unsigned long size_lock_address; 
+extern unsigned long inode_lock_address; 
+static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
+
+
+struct rw_semaphore testsem;
+struct rw_semaphore testlock;
+DEFINE_SPINLOCK(dummy_page_lock);
+DEFINE_SPINLOCK(remote_inode_lock);
+
+int remote_lock_status = 0; //0 not held, 1 read mode, 2 write mode
+DEFINE_SPINLOCK(size_lock);
+int remote_size_status = 0; //0 not held, 1 read mode, 2 write mode
+
+//this is protected by the testsem
+int initialized = 0;
+
+static int mind_fetch_page_write(
+        uintptr_t shmem_address, void *page_dma_address, size_t *data_size)
+{
+        struct fault_reply_struct ret_buf;
+        struct cache_waiting_node *wait_node = NULL;
+        int r;
+        unsigned long start_time = jiffies;
+
+	spin_lock(&dummy_page_lock);
+
+        ret_buf.data_size = PAGE_SIZE;
+        ret_buf.data = page_dma_address;
+
+        //pr_info("mind_fetch_page(shmem_address = 0x%lx, "
+        //        "page_dma_address = %p)", shmem_address, page_dma_address);
+
+        wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
+        BUG_ON(!wait_node);
+	
+	spin_unlock(&dummy_page_lock);
+
+        //mind_pr_cache_dir_state(
+        //        "BEFORFE PFAULT ACK/NACK",
+        //        start_time, shmem_address,
+        //        atomic_read(&wait_node->ack_counter),
+        //        atomic_read(&wait_node->target_counter));
+
+        BUG_ON(!is_kshmem_address(shmem_address));
+        // NULL struct task_struct* is okay here because
+        // if is_kshmem_address(shmem_address) then task_struct is never
+        // derefenced.
+        r = send_pfault_to_mn(NULL, X86_PF_WRITE, shmem_address, 0, &ret_buf);
+	pr_info("r value mind_fetch_page_write %d", r);
+        //pr_info("sending pfault to mn done");
+        wait_node->ack_buf = ret_buf.ack_buf;
+
+        pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
+        if(r <= 0){
+                cancel_waiting_for_nack(wait_node);
+		pr_info("stopped waiting");
+		return r;
+	}
+        r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
+
+        //mind_pr_cache_dir_state(
+        //        "AFTER PFAULT ACK/NACK",
+        //        start_time, shmem_address,
+        //        atomic_read(&wait_node->ack_counter),
+        //        atomic_read(&wait_node->target_counter));
+
+        data_size = ret_buf.data_size;
+        return r;
+}
+
+
+static bool request_inode_lock_write(int inode){
+
+        uintptr_t inode_pages_address;
+        int r;
+        struct mm_struct *mm;
+        mm = get_init_mm();
+        spinlock_t *ptl_ptr = NULL;
+        pte_t *temppte;
+        void *ptrdummy;
+        static struct cnthread_inv_msg_ctx send_ctx;
+        loff_t test = 20; 
+        inode_pages_address = inode_lock_address;
+	pr_info("requesting address 0x%lx", inode_pages_address);
+	pr_info("requesting address %ld", inode_pages_address);
+
+	int cpu_id = get_cpu();
+	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        size_t data_size;
+        void *buf = get_dummy_page_dma_addr(get_cpu());
+        r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+	pr_info("r value was %d size fetched %d", r, data_size);
+        //BUG_ON(r);
+        spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+	if(r >= 1){	
+		return true;
+	}else{
+		return false;
+	}
+}
+
+
+
+
+u64 shmem_address_check(void *addr, unsigned long size)
+{
+
+	pr_info("shmem address callback %ld", addr);
+	pr_info("shmem address callback 0x%lx", addr);
+/*extern unsigned long shmem_address[10];
+extern unsigned long inode_address[10];
+extern unsigned long size_lock_address; 
+extern unsigned long inode_lock_address; 
+*/
+	int i;
+	for(i = 0; i < 10; i++){
+		if(addr == shmem_address[i]){
+			pr_info("address found was shmem");
+			return 1;
+
+		}
+	}
+	for(i = 0; i < 10; i++){
+		if(addr == inode_address[i]){
+			pr_info("address found was inode");
+			return 1;
+
+		}
+	}
+	if(addr = size_lock_address){
+		pr_info("address found was size lock");
+	}
+
+	if(addr = inode_lock_address){
+		pr_info("address found was inode lock");
+	}
+//check to see if this is an address we are using here
+	return 0;
+}
+
+
+
+u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
+{
+    pr_info("invalidate page callback called address %ld", addr);
+    int i;
+    for(i = 0; i < 10; i++){
+	    if(addr == shmem_address[i]){
+		    pr_info("address callback was shmem");
+		    return 1;
+
+	    }
+    }
+    for(i = 0; i < 10; i++){
+	    if(addr == inode_address[i]){
+		    pr_info("address callback  was inode");
+		    return 1;
+
+	    }
+    }
+    if(addr = size_lock_address){
+	    pr_info("address callback was size lock");
+
+    }
+
+    if(addr = inode_lock_address){
+	    pr_info("address callback was inode lock");
+	spin_lock(&remote_inode_lock);  
+        int r;
+        struct mm_struct *mm;
+        mm = get_init_mm();
+        spinlock_t *ptl_ptr = NULL;
+        pte_t *temppte;
+        void *ptrdummy;
+        static struct cnthread_inv_msg_ctx send_ctx;
+        loff_t test = 20; 
+
+	int inode_pages_address = inode_lock_address;
+        void *buf = get_dummy_page_dma_addr(get_cpu());
+
+		//do invalidation stuff here
+		//based off of shmem_invalidate_page_write
+	struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
+        struct cnthread_inv_msg_ctx *inv_ctx = &((struct cnthread_inv_argv *)inv_argv)->inv_ctx;
+	rdma_ctx = &inv_ctx->rdma_ctx;
+	inv_ctx->original_qp = (rdma_ctx->ret & CACHELINE_ROCE_RKEY_QP_MASK) >> CACHELINE_ROCE_RKEY_QP_SHIFT;
+        create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
+        *((u32 *)(&(inv_ctx->inval_buf[CACHELINE_ROCE_VOFFSET_TO_IP]))) = rdma_ctx->ip_val;
+
+	//pr_info("inv_ctx->original_qp %d", inv_ctx->original_qp);
+	
+	u32 req_qp = (get_id_from_requester(inv_ctx->rdma_ctx.requester) * DISAGG_QP_PER_COMPUTE) + inv_ctx->original_qp;
+        //pr_info("req_qp %d", req_qp);
+	
+	//pr_info("before cn_copy_page");
+	cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        temppte, CN_TARGET_PAGE, req_qp, buf);
+        //pr_info("after cn_copy_page");
+	
+	//pr_info("before inval ack");
+	//pr_info("inv_ctx->inval_buf %d", inv_ctx->inval_buf);
+        _cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
+        //pr_info("after inval ack");
+        
+	//pr_info("before FinACK");
+        cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
+        //pr_info("after FinACK");
+
+	remote_lock_status = 0; //0 not held, 1 read mode, 2 write mode
+
+
+	spin_unlock(&remote_inode_lock);  
+
+    }
+    
+    return 1024;
+}
+
+
+
+
 /* Get inode ino from disk */
 struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
 {
+
+	if(!initialized){
+		init_rwsem(&testsem);
+		initialized = 1;
+		//lockdep_set_class(&testsem, &sb->s_type->i_mutex_key);
+	}
     struct inode *inode = NULL;
     struct simplefs_inode *cinode = NULL;
     struct simplefs_inode_info *ci = NULL;
@@ -914,6 +1188,211 @@ static const char *simplefs_get_link(struct dentry *dentry,
 {
     return inode->i_link;
 }
+int test_inode_lock_simple(void){
+	pr_info("lock acquired");
+	return 0;
+}
+
+void simple_dfs_inode_lock(struct inode *inode){
+	if(!initialized){
+		init_rwsem(&testsem);
+		initialized = 1;
+	}
+	int i = 0;
+	pr_info("trying to grab lock %d", inode->i_ino);
+
+	//:start
+
+//
+
+	//down_write(&testsem);
+	down_write(&inode->i_rwsem);
+	spin_lock(&remote_inode_lock);  
+	request_inode_lock_write(inode->i_ino);
+
+	pr_info("got lock, status was %d", remote_lock_status);
+	remote_lock_status = 2; //write
+
+	//try to acquire remote lock
+	//	check to see if we have access to it already in the hashtable
+	//	if we don't, then attempt to grab it
+	//if failed release lock and goto start
+	//if success then return from this function
+}
+
+void simple_dfs_inode_unlock(struct inode *inode){
+	if(!initialized){
+		init_rwsem(&testsem);
+		initialized = 1;
+	}
+	int i = 0;
+	//release remote lock
+	spin_unlock(&remote_inode_lock);  
+	up_write(&inode->i_rwsem);
+	//up_write(&testsem);
+	pr_info("lock released %d", inode->i_ino);
+}
+
+void simple_dfs_inode_lock_shared(struct inode *inode){
+	if(!initialized){
+		init_rwsem(&testsem);
+		init_rwsem(&testlock);
+		initialized = 1;
+	}
+	int i = 0;
+	pr_info("test lock address %d", &testlock);
+	pr_info("trying to get read lock %d", inode->i_ino);
+	
+	down_write(&inode->i_rwsem);
+	spin_lock(&remote_inode_lock);  
+	request_inode_lock_write(inode->i_ino);
+
+	pr_info("read lock acquired, status was %d", remote_lock_status);
+	remote_lock_status = 2; //write
+
+
+	//down_read(&inode->i_rwsem);
+}
+
+void simple_dfs_inode_unlock_shared(struct inode *inode){
+	if(!initialized){
+		init_rwsem(&testsem);
+		init_rwsem(&testlock);
+		initialized = 1;
+		down_write(&testlock); //because of the unlock stuff
+		//that occurs at the beginning from the dcache stuff
+	}
+	int i = 0;	
+	spin_unlock(&remote_inode_lock);  
+	up_write(&inode->i_rwsem);
+	pr_info("read lock released %d", inode->i_ino);
+
+}
+int simple_dfs_inode_trylock(struct inode *inode){
+	if(!initialized){
+		init_rwsem(&testsem);
+		initialized = 1;
+	}
+	pr_info("inode trylock write");
+	return down_write_trylock(&inode->i_rwsem);
+	//return down_write_trylock(&testsem);
+
+}
+int simple_dfs_inode_trylock_shared(struct inode *inode){
+	if(!initialized){
+		init_rwsem(&testsem);
+		initialized = 1;
+	}
+	pr_info("inode trylock shared");
+		//return down_read_trylock(&inode->i_rwsem);
+		return down_write_trylock(&inode->i_rwsem);
+
+		//return down_read_trylock(&testsem);
+
+}
+
+int simple_dfs_inode_is_locked(struct inode *inode){
+	if(!initialized){
+		init_rwsem(&testsem);
+		initialized = 1;
+	}
+	pr_info("inode is locked function called");
+	return rwsem_is_locked(&inode->i_rwsem);
+	//return rwsem_is_locked(&testsem);
+
+}
+
+void simple_dfs_inode_lock_nested(struct inode *inode, unsigned subclass){
+	if(!initialized){
+		init_rwsem(&testsem);
+		initialized = 1;
+	}
+	pr_info("INODE LOCK NESTED CALLED");
+pr_info("******INODE LOCK NESTED CALLED");
+pr_info("INODE LOCK NESTED CALLED");
+pr_info("INODE LOCK NESTED CALLED");
+pr_info("INODE LOCK NESTED CALLED");
+pr_info("INODE LOCK NESTED CALLED");
+pr_info("INODE LOCK NESTED CALLED");
+pr_info("INODE LOCK NESTED CALLED");
+pr_info("******INODE LOCK NESTED CALLED");
+
+	down_write_nested(&inode->i_rwsem, subclass);
+
+}
+
+
+
+
+int  test_counter = 0;
+
+loff_t simple_i_size_read(const struct inode *inode){
+	spin_lock(&size_lock);  
+
+	test_counter ++;
+	pr_info("reading size of inode iteration %d", test_counter);
+	//acquire lock in read mode
+	//
+	//
+	//maybe we could put it somewhere else?
+	//probably have to put it elsewhere due to const getting
+	//in the way
+	//down_read(inode->i_size_rwsem); //NOTE THIS HAS TO BE INITIALIZED in inode_init_always(?)
+	//also has to be a pointer to get around the const stuff
+
+	//rwsem has to be separate from the inode due to the const stuff making things break?
+	//down_read(&testsem);
+	//check to see if we have remote access
+	//	cases are either we do, don't, or someone else started the waiting process
+	//	either:
+	//	request access
+	//	wait for current request to finish
+	//	already have it, proceed to read
+	//	release locks before returning
+	loff_t temp = inode->i_size;
+	//up_read(inode->i_size_rwsem); //NOTE THIS HAS TO BE INITIALIZED in inode_init_always(?)
+	spin_unlock(&size_lock);  
+
+	//up_read(&testsem);
+
+	return temp; 
+}
+
+void simple_i_size_write(struct inode *inode, loff_t i_size){
+	pr_info("writing size of inode");
+	spin_lock(&size_lock);  
+
+	//down_write(inode->i_size_rwsem); //note this has to be initialized in inode_init_always(?)
+	//down_write(&testsem);
+	//acquire lock in write mode (blocking local access)
+	//acquire remote access in write mode
+	//update size locally then remotely
+	inode->i_size = i_size;
+	//release locks before returning
+	//up_write(inode->i_size_rwsem); //note this has to be initialized in inode_init_always(?)
+	spin_unlock(&size_lock);  
+
+//	up_write(&testsem);
+}
+
+int simple_inode_down_read_killable(struct inode * inode){
+		pr_info("down read killable inside of dfs");
+		int result = down_read_killable(&inode->i_rwsem);
+		if(result == 0){ //0 means no error
+			spin_lock(&remote_inode_lock);
+		}
+	return result;
+}
+int simple_inode_down_write_killable(struct inode * inode){
+
+	pr_info("down write killable inside of dfs");
+
+	int result = down_write_killable(&inode->i_rwsem);
+		if(result == 0){ //0 means no error
+			spin_lock(&remote_inode_lock);
+		}
+	return result;
+}
 
 static const struct inode_operations simplefs_inode_ops = {
     .lookup = simplefs_lookup,
@@ -924,6 +1403,20 @@ static const struct inode_operations simplefs_inode_ops = {
     .rename = simplefs_rename,
     .link = simplefs_link,
     .symlink = simplefs_symlink,
+    .dfs_inode_lock = simple_dfs_inode_lock,
+    .dfs_inode_unlock = simple_dfs_inode_unlock,
+    .dfs_i_size_read = simple_i_size_read,
+    .dfs_i_size_write = simple_i_size_write,
+    .dfs_inode_lock_shared = simple_dfs_inode_lock_shared,
+    .dfs_inode_unlock_shared = simple_dfs_inode_unlock_shared,
+    .dfs_inode_trylock = simple_dfs_inode_trylock,
+    .dfs_inode_trylock_shared = simple_dfs_inode_trylock_shared,
+    .dfs_inode_is_locked = simple_dfs_inode_is_locked,
+    .dfs_inode_lock_nested = simple_dfs_inode_lock_nested,
+	.inode_down_read_killable = simple_inode_down_read_killable,
+	.inode_down_write_killable = simple_inode_down_write_killable , 
+
+
 };
 
 static const struct inode_operations symlink_inode_ops = {

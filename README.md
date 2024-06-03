@@ -160,3 +160,10 @@ struct simplefs_extent
 
 `simplefs` is released under the BSD 2 clause license. Use of this source code is governed by
 a BSD-style license that can be found in the LICENSE file.
+
+
+mkdir -p test
+dd if=/dev/zero of=test.img bs=1M count=50
+./mkfs.simplefs test.img
+sudo mount -o loop -t simplefs test.img test
+

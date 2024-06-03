@@ -125,6 +125,11 @@ extern const struct address_space_operations simplefs_aops;
 extern uint32_t simplefs_ext_search(struct simplefs_file_ei_block *index,
                                     uint32_t iblock);
 
+
+u64 shmem_address_check(void *addr, unsigned long size);
+u64 testing_invalidate_page_callback(void *addr, void *inv_argv);
+
+
 /* Getters for superbock and inode */
 #define SIMPLEFS_SB(sb) (sb->s_fs_info)
 #define SIMPLEFS_INODE(inode) \
