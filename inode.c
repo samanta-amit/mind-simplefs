@@ -153,12 +153,12 @@ extern unsigned long inode_lock_address;
 
 		}
 	}
-	if(addr = size_lock_address){
+	if(addr == size_lock_address){
 		pr_info("address found was size lock");
 		return 1;
 	}
 
-	if(addr = inode_lock_address){
+	if(addr == inode_lock_address){
 		pr_info("address found was inode lock");
 		return 1;
 	}
@@ -183,9 +183,9 @@ static bool invalidate_lock_write(int inode_lock){
 
 
         inode_pages_address = inode_lock_address; 
-
+	pr_info("inode lock address %d", inode_lock_address);
 	int cpu_id = get_cpu();
-	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+	//spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         //spin_lock(&dummy_page_lock);
        	//pr_info("invalidate_page_write 3");
@@ -200,7 +200,7 @@ static bool invalidate_lock_write(int inode_lock){
         ptrdummy = get_dummy_page_buf_addr(get_cpu());
 	pr_info("invalidate_page_write 4");
 
-	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+	//spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         //spin_unlock_irq(&mapping->tree_lock);
 
@@ -228,7 +228,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 
 	    }
     }
-    if(addr = size_lock_address){
+    if(addr == size_lock_address){
 	    pr_info("address callback was size lock");
 	spin_lock(&remote_inode_lock);  
         int r;
@@ -278,7 +278,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 
     }
 
-    if(addr = inode_lock_address){
+    if(addr == inode_lock_address){
 	    pr_info("address callback was inode lock");
 	spin_lock(&remote_inode_lock);  
         int r;
