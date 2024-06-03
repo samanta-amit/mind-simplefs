@@ -267,7 +267,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
         //pr_info("after FinACK");
 
 	remote_lock_status = 0; //0 not held, 1 read mode, 2 write mode
-
+	pr_info("REMOTE LOCK STATUS DOWNGRADED");
 
 	spin_unlock(&remote_inode_lock);  
 
@@ -1208,10 +1208,15 @@ void simple_dfs_inode_lock(struct inode *inode){
 	//down_write(&testsem);
 	down_write(&inode->i_rwsem);
 	spin_lock(&remote_inode_lock);  
-	request_inode_lock_write(inode->i_ino);
 
 	pr_info("got lock, status was %d", remote_lock_status);
-	remote_lock_status = 2; //write
+	if(remote_lock_status == 2){
+		
+	}else{
+		int test = request_inode_lock_write(inode->i_ino);
+		pr_info("upgrading lock status result %d",test);
+		remote_lock_status = 2; //write
+	}
 
 	//try to acquire remote lock
 	//	check to see if we have access to it already in the hashtable
@@ -1245,10 +1250,14 @@ void simple_dfs_inode_lock_shared(struct inode *inode){
 	
 	down_write(&inode->i_rwsem);
 	spin_lock(&remote_inode_lock);  
-	request_inode_lock_write(inode->i_ino);
-
-	pr_info("read lock acquired, status was %d", remote_lock_status);
-	remote_lock_status = 2; //write
+	pr_info("got lock, status was %d", remote_lock_status);
+	if(remote_lock_status == 2){
+		
+	}else{
+		int test = request_inode_lock_write(inode->i_ino);
+		pr_info("upgrading lock status result %d",test);
+		remote_lock_status = 2; //write
+	}
 
 
 	//down_read(&inode->i_rwsem);
