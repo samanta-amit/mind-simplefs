@@ -155,10 +155,12 @@ extern unsigned long inode_lock_address;
 	}
 	if(addr = size_lock_address){
 		pr_info("address found was size lock");
+		return 1;
 	}
 
 	if(addr = inode_lock_address){
 		pr_info("address found was inode lock");
+		return 1;
 	}
 //check to see if this is an address we are using here
 	return 0;
