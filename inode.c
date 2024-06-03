@@ -230,6 +230,51 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
     }
     if(addr = size_lock_address){
 	    pr_info("address callback was size lock");
+	spin_lock(&remote_inode_lock);  
+        int r;
+        struct mm_struct *mm;
+        mm = get_init_mm();
+        spinlock_t *ptl_ptr = NULL;
+        pte_t *temppte;
+        void *ptrdummy;
+        static struct cnthread_inv_msg_ctx send_ctx;
+        loff_t test = 20; 
+
+	int inode_pages_address = size_lock_address;
+        void *buf = get_dummy_page_dma_addr(get_cpu());
+
+		//do invalidation stuff here
+		//based off of shmem_invalidate_page_write
+	struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
+        struct cnthread_inv_msg_ctx *inv_ctx = &((struct cnthread_inv_argv *)inv_argv)->inv_ctx;
+	rdma_ctx = &inv_ctx->rdma_ctx;
+	inv_ctx->original_qp = (rdma_ctx->ret & CACHELINE_ROCE_RKEY_QP_MASK) >> CACHELINE_ROCE_RKEY_QP_SHIFT;
+        create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
+        *((u32 *)(&(inv_ctx->inval_buf[CACHELINE_ROCE_VOFFSET_TO_IP]))) = rdma_ctx->ip_val;
+
+	//pr_info("inv_ctx->original_qp %d", inv_ctx->original_qp);
+	
+	u32 req_qp = (get_id_from_requester(inv_ctx->rdma_ctx.requester) * DISAGG_QP_PER_COMPUTE) + inv_ctx->original_qp;
+        //pr_info("req_qp %d", req_qp);
+	
+	//pr_info("before cn_copy_page");
+	cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        temppte, CN_TARGET_PAGE, req_qp, buf);
+        //pr_info("after cn_copy_page");
+	
+	//pr_info("before inval ack");
+	//pr_info("inv_ctx->inval_buf %d", inv_ctx->inval_buf);
+        _cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
+        //pr_info("after inval ack");
+        
+	//pr_info("before FinACK");
+        cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
+        //pr_info("after FinACK");
+
+	remote_lock_status = 0; //0 not held, 1 read mode, 2 write mode
+	pr_info("REMOTE LOCK STATUS DOWNGRADED");
+
+	spin_unlock(&remote_inode_lock);  
 
     }
 
