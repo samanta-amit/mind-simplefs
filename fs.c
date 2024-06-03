@@ -67,6 +67,8 @@ static struct file_system_type simplefs_file_system_type = {
 
 static int __init simplefs_init(void)
 {
+   pr_info("test invalidate page callback %d", testing_invalidate_page_callback);
+	pr_info("test shmem_address check %d", shmem_address_check);
     set_invalidate_page_callback(testing_invalidate_page_callback);
     set_shmem_address_check(shmem_address_check);
     int i;

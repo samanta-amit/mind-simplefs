@@ -127,40 +127,6 @@ static int mind_fetch_page_write(
 }
 
 
-static bool request_inode_lock_write(int inode){
-
-        uintptr_t inode_pages_address;
-        int r;
-        struct mm_struct *mm;
-        mm = get_init_mm();
-        spinlock_t *ptl_ptr = NULL;
-        pte_t *temppte;
-        void *ptrdummy;
-        static struct cnthread_inv_msg_ctx send_ctx;
-        loff_t test = 20; 
-        inode_pages_address = inode_lock_address;
-	pr_info("requesting address 0x%lx", inode_pages_address);
-	pr_info("requesting address %ld", inode_pages_address);
-
-	int cpu_id = get_cpu();
-	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
-
-        size_t data_size;
-        void *buf = get_dummy_page_dma_addr(get_cpu());
-        r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
-	pr_info("r value was %d size fetched %d", r, data_size);
-        //BUG_ON(r);
-        spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-
-	if(r >= 1){	
-		return true;
-	}else{
-		return false;
-	}
-}
-
-
-
 
 u64 shmem_address_check(void *addr, unsigned long size)
 {
@@ -197,6 +163,48 @@ extern unsigned long inode_lock_address;
 //check to see if this is an address we are using here
 	return 0;
 }
+
+
+static bool invalidate_lock_write(int inode_lock){
+
+	pr_info("invalidate_page_write 1");
+        uintptr_t inode_pages_address;
+        int r;
+        struct mm_struct *mm;
+        mm = get_init_mm();
+        spinlock_t *ptl_ptr = NULL;
+        pte_t *temppte;
+        void *ptrdummy;
+        static struct cnthread_inv_msg_ctx send_ctx;
+        loff_t test = 20; 
+	//pr_info("invalidate_page_write 2");
+
+
+        inode_pages_address = inode_lock_address; 
+
+	int cpu_id = get_cpu();
+	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        //spin_lock(&dummy_page_lock);
+       	//pr_info("invalidate_page_write 3");
+
+        size_t data_size;
+        void *buf = get_dummy_page_dma_addr(get_cpu());
+        r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+        BUG_ON(r);
+
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+
+        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+	pr_info("invalidate_page_write 4");
+
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        //spin_unlock_irq(&mapping->tree_lock);
+
+        return true;
+}
+
 
 
 
@@ -1201,10 +1209,6 @@ void simple_dfs_inode_lock(struct inode *inode){
 	int i = 0;
 	pr_info("trying to grab lock %d", inode->i_ino);
 
-	//:start
-
-//
-
 	//down_write(&testsem);
 	down_write(&inode->i_rwsem);
 	spin_lock(&remote_inode_lock);  
@@ -1213,8 +1217,8 @@ void simple_dfs_inode_lock(struct inode *inode){
 	if(remote_lock_status == 2){
 		
 	}else{
-		int test = request_inode_lock_write(inode->i_ino);
-		pr_info("upgrading lock status result %d",test);
+		invalidate_lock_write(0);
+		pr_info("upgrading lock status result");
 		remote_lock_status = 2; //write
 	}
 
@@ -1254,8 +1258,9 @@ void simple_dfs_inode_lock_shared(struct inode *inode){
 	if(remote_lock_status == 2){
 		
 	}else{
-		int test = request_inode_lock_write(inode->i_ino);
-		pr_info("upgrading lock status result %d",test);
+		invalidate_lock_write(0);
+
+		pr_info("upgrading lock status result");
 		remote_lock_status = 2; //write
 	}
 
