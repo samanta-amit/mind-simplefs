@@ -351,6 +351,12 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	spin_lock(&remote_inode_lock);  
 	invalidate_lock_write(0, inv_argv);
 
+	pr_info("RECEIVED INVALIDATION");
+	pr_info("RECEIVED INVALIDATION");
+	pr_info("RECEIVED INVALIDATION");
+	pr_info("RECEIVED INVALIDATION");
+	pr_info("RECEIVED INVALIDATION");
+
 	//downgrade copy (need to separate for invalid and shared)
 	remote_lock_status = 0;
     	//removed to test for deadlock
@@ -1278,24 +1284,16 @@ int test_inode_lock_simple(void){
 	return 0;
 }
 
-void simple_dfs_inode_lock(struct inode *inode){
-	if(!initialized){
-		init_rwsem(&testsem);
-		initialized = 1;
-	}
-
-	down_write(&inode->i_rwsem);
-	//loop to retry remote access
+void lock_loop(int ino){
 	while(1){
 		int i = 0;
-		pr_info("trying to grab lock %d", inode->i_ino);
 
 		//down_write(&testsem);
 		spin_lock(&remote_inode_lock);  
 
 		pr_info("got lock, status was %d", remote_lock_status);
 		if(remote_lock_status == 2){
-		return;
+			return;
 		}else{
 			pr_info("upgrading lock status result");
 
@@ -1308,12 +1306,24 @@ void simple_dfs_inode_lock(struct inode *inode){
 			return;
 		}
 
-	//try to acquire remote lock
-	//	check to see if we have access to it already in the hashtable
-	//	if we don't, then attempt to grab it
-	//if failed release lock and goto start
-	//if success then return from this function
+		//try to acquire remote lock
+		//	check to see if we have access to it already in the hashtable
+		//	if we don't, then attempt to grab it
+		//if failed release lock and goto start
+		//if success then return from this function
 	}
+
+}
+
+void simple_dfs_inode_lock(struct inode *inode){
+	if(!initialized){
+		init_rwsem(&testsem);
+		initialized = 1;
+	}
+
+	down_write(&inode->i_rwsem);
+	//loop to retry remote access
+	lock_loop(inode->i_ino);
 }
 
 void simple_dfs_inode_unlock(struct inode *inode){
@@ -1336,27 +1346,7 @@ void simple_dfs_inode_lock_shared(struct inode *inode){
 		initialized = 1;
 	}
 	down_write(&inode->i_rwsem);
-	while(1){
-		int i = 0;
-		pr_info("test lock address %d", &testlock);
-		pr_info("trying to get read lock %d", inode->i_ino);
-
-		spin_lock(&remote_inode_lock);  
-		pr_info("got lock, status was %d", remote_lock_status);
-		if(remote_lock_status == 2){
-		return;
-		}else{
-
-			pr_info("upgrading lock status result");
-			bool acquired = get_remote_lock_access(0);
-			if(!acquired){
-				spin_unlock(&remote_inode_lock);
-			}
-			remote_lock_status = 2; //write
-			return;
-		}
-
-	}
+	lock_loop(inode->i_ino);
 	//down_read(&inode->i_rwsem);
 }
 
@@ -1384,25 +1374,7 @@ int simple_dfs_inode_trylock(struct inode *inode){
 	if(!acquired){
 		return acquired;//return down_write_trylock(&testsem);
 	}
-	while(1){
-		int i = 0;
-		spin_lock(&remote_inode_lock);  
-		pr_info("got lock, status was %d", remote_lock_status);
-		if(remote_lock_status == 2){
-			return;
-		}else{
-
-			pr_info("upgrading lock status result");
-			bool acquired = get_remote_lock_access(0);
-			if(!acquired){
-				spin_unlock(&remote_inode_lock);
-			}
-			remote_lock_status = 2; //write
-			return;
-		}
-
-	}
-
+	lock_loop(inode->i_ino);
 
 
 }
@@ -1417,28 +1389,7 @@ int simple_dfs_inode_trylock_shared(struct inode *inode){
 	if(!acquired){
 		return acquired;//return down_write_trylock(&testsem);
 	}
-	while(1){
-		int i = 0;
-		spin_lock(&remote_inode_lock);  
-		pr_info("got lock, status was %d", remote_lock_status);
-		if(remote_lock_status == 2){
-		return;
-		}else{
-
-			pr_info("upgrading lock status result");
-			bool acquired = get_remote_lock_access(0);
-			if(!acquired){
-				spin_unlock(&remote_inode_lock);
-			}
-			remote_lock_status = 2; //write
-			return;
-
-		}
-
-	}
-
-
-
+	lock_loop(inode->i_ino);
 
 }
 
@@ -1529,29 +1480,8 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 int simple_inode_down_read_killable(struct inode * inode){
 	pr_info("down read killable inside of dfs");
 		int result = down_write_killable(&inode->i_rwsem);
-
-	while(1){
-		if(result == 0){ //0 means no error
-			spin_lock(&remote_inode_lock);
-			pr_info("got lock, status was %d", remote_lock_status);
-			if(remote_lock_status == 2){
-				return result;
-			}else{
-				pr_info("upgrading lock status result");
-
-				bool acquired = get_remote_lock_access(0);
-				if(!acquired){
-					spin_unlock(&remote_inode_lock);
-					continue;
-				}
-				remote_lock_status = 2; //write
-				return result;
-			}
-
-
-		}else{
-			return result;
-		}
+	if(result == 0){ //0 means no error
+		lock_loop(inode->i_ino);
 	}
 	return result;
 }
@@ -1560,28 +1490,8 @@ int simple_inode_down_write_killable(struct inode * inode){
 	pr_info("down write killable inside of dfs");
 
 	int result = down_write_killable(&inode->i_rwsem);
-	while(1){
-		if(result == 0){ //0 means no error
-			spin_lock(&remote_inode_lock);
-			pr_info("got lock, status was %d", remote_lock_status);
-			if(remote_lock_status == 2){
-				return result;
-			}else{
-				pr_info("upgrading lock status result");
-
-				bool acquired = get_remote_lock_access(0);
-				if(!acquired){
-					spin_unlock(&remote_inode_lock);
-					continue;
-				}
-				remote_lock_status = 2; //write
-				return result;
-			}
-
-
-		}else{
-			return result;
-		}
+	if(result == 0){
+		lock_loop(inode->i_ino);
 	}
 	return result;
 
