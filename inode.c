@@ -146,7 +146,7 @@ static bool get_remote_lock_access(int inode_ino){
 	//pr_info("invalidate_page_write 2");
 
 
-        inode_pages_address = shmem_address[0];
+        inode_pages_address = inode_lock_address;
 
 	int cpu_id = get_cpu();
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
@@ -205,7 +205,7 @@ static bool invalidate_lock_write(int inode_ino, void *inv_argv){
         static struct cnthread_inv_msg_ctx send_ctx;
         loff_t test = 20; 
 	int i;
-        inode_pages_address = shmem_address[0];
+        inode_pages_address = inode_lock_address;
 	
 	int cpu_id = get_cpu();
 
@@ -305,7 +305,7 @@ extern unsigned long inode_lock_address;
 		return 1;
 	}
 
-	if(addr == shmem_address[0]){
+	if(addr == inode_lock_address){
 		pr_info("address found was inode lock");
 		return 1;
 	}
@@ -341,7 +341,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    return 1;
     }
 	*/
-    if(addr == shmem_address[0]){
+    if(addr == inode_lock_address){
 	    pr_info("address callback was inode lock");
 	spin_lock(&remote_inode_lock);  
 	invalidate_lock_write(0, inv_argv);
