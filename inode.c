@@ -71,6 +71,8 @@ int remote_size_status = 0; //0 not held, 1 read mode, 2 write mode
 
 //this is protected by the testsem
 int initialized = 0;
+static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
+
 
 static int mind_fetch_page_write(
         uintptr_t shmem_address, void *page_dma_address, size_t *data_size)
@@ -128,6 +130,151 @@ static int mind_fetch_page_write(
 
 
 
+
+static bool get_remote_lock_access(int inode_ino){
+
+	//pr_info("invalidate_page_write 1");
+        uintptr_t inode_pages_address;
+        int r;
+        struct mm_struct *mm;
+        mm = get_init_mm();
+        spinlock_t *ptl_ptr = NULL;
+        pte_t *temppte;
+        void *ptrdummy;
+        static struct cnthread_inv_msg_ctx send_ctx;
+        loff_t test = 20; 
+	//pr_info("invalidate_page_write 2");
+
+
+        inode_pages_address = shmem_address[0];
+
+	int cpu_id = get_cpu();
+	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        //spin_lock(&dummy_page_lock);
+       	//pr_info("invalidate_page_write 3");
+
+        size_t data_size;
+        void *buf = get_dummy_page_dma_addr(get_cpu());
+        r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+        BUG_ON(r);
+
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+
+        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+	//pr_info("invalidate_page_write 4");
+
+        //writes data to that page
+        //copy data into dummy buffer, and send to switch
+        //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+        
+	//int i;
+        //for(i = 0; i < 20; i++){
+        //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
+        //}
+
+	//pr_info("invalidate_page_write 5");
+
+        //spin_lock(ptl_ptr);
+
+        //cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        //temppte, CN_OTHER_PAGE, 0, buf);
+        //pr_info("invalidate_page_write 6");
+
+        //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
+
+        // spin_unlock(ptl_ptr);
+        //spin_unlock(&dummy_page_lock);
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        //spin_unlock_irq(&mapping->tree_lock);
+
+        return true;
+}
+
+
+static bool invalidate_lock_write(int inode_ino, void *inv_argv){
+
+        uintptr_t inode_pages_address;
+        int r;
+        struct mm_struct *mm;
+        mm = get_init_mm();
+        spinlock_t *ptl_ptr = NULL;
+        pte_t *temppte;
+        void *ptrdummy;
+        static struct cnthread_inv_msg_ctx send_ctx;
+        loff_t test = 20; 
+	int i;
+        inode_pages_address = shmem_address[0];
+	
+	int cpu_id = get_cpu();
+
+        //spin_lock(&dummy_page_lock);
+        spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        size_t data_size;
+        void *buf = get_dummy_page_dma_addr(get_cpu());
+        //r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+        //BUG_ON(r);
+
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+
+        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+
+        //writes data to that page
+        //copy data into dummy buffer, and send to switch
+        //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+
+	((char*)get_dummy_page_buf_addr(get_cpu()))[0] = 'h';
+	((char*)get_dummy_page_buf_addr(get_cpu()))[1] = 'i';
+
+        //for(i = 0; i < 20; i++){
+        //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
+        //}
+
+
+        //spin_lock(ptl_ptr);
+	//pr_info("inside ptl_ptr lock");
+
+	struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
+        struct cnthread_inv_msg_ctx *inv_ctx = &((struct cnthread_inv_argv *)inv_argv)->inv_ctx;
+	
+	rdma_ctx = &inv_ctx->rdma_ctx;
+	inv_ctx->original_qp = (rdma_ctx->ret & CACHELINE_ROCE_RKEY_QP_MASK) >> CACHELINE_ROCE_RKEY_QP_SHIFT;
+        create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
+        *((u32 *)(&(inv_ctx->inval_buf[CACHELINE_ROCE_VOFFSET_TO_IP]))) = rdma_ctx->ip_val;
+
+	//pr_info("inv_ctx->original_qp %d", inv_ctx->original_qp);
+	
+	u32 req_qp = (get_id_from_requester(inv_ctx->rdma_ctx.requester) * DISAGG_QP_PER_COMPUTE) + inv_ctx->original_qp;
+        //pr_info("req_qp %d", req_qp);
+	
+	//pr_info("before cn_copy_page");
+	cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        temppte, CN_TARGET_PAGE, req_qp, buf);
+        //pr_info("after cn_copy_page");
+	
+	//pr_info("before inval ack");
+	//pr_info("inv_ctx->inval_buf %d", inv_ctx->inval_buf);
+        _cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
+        //pr_info("after inval ack");
+        
+	//pr_info("before FinACK");
+        cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
+        //pr_info("after FinACK");
+	
+	//spin_unlock(ptl_ptr);
+	//spin_unlock(&dummy_page_lock);
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+	//spin_unlock_irq(&mapping->tree_lock);
+	return true;
+}
+
+
+
+
+
 u64 shmem_address_check(void *addr, unsigned long size)
 {
 
@@ -158,53 +305,12 @@ extern unsigned long inode_lock_address;
 		return 1;
 	}
 
-	if(addr == inode_lock_address){
+	if(addr == shmem_address[0]){
 		pr_info("address found was inode lock");
 		return 1;
 	}
 //check to see if this is an address we are using here
 	return 0;
-}
-
-
-static bool invalidate_lock_write(int inode_lock){
-
-	pr_info("invalidate_page_write 1");
-        uintptr_t inode_pages_address;
-        int r;
-        struct mm_struct *mm;
-        mm = get_init_mm();
-        spinlock_t *ptl_ptr = NULL;
-        pte_t *temppte;
-        void *ptrdummy;
-        static struct cnthread_inv_msg_ctx send_ctx;
-        loff_t test = 20; 
-	//pr_info("invalidate_page_write 2");
-
-
-        inode_pages_address = inode_lock_address; 
-	pr_info("inode lock address %d", inode_lock_address);
-	int cpu_id = get_cpu();
-	//spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
-
-        //spin_lock(&dummy_page_lock);
-       	//pr_info("invalidate_page_write 3");
-
-        size_t data_size;
-        void *buf = get_dummy_page_dma_addr(get_cpu());
-        r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
-        BUG_ON(r);
-
-        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
-
-        ptrdummy = get_dummy_page_buf_addr(get_cpu());
-	pr_info("invalidate_page_write 4");
-
-	//spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-
-        //spin_unlock_irq(&mapping->tree_lock);
-
-        return true;
 }
 
 
@@ -214,6 +320,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
     pr_info("invalidate page callback called address %ld", addr);
     int i;
+    /*
     for(i = 0; i < 10; i++){
 	    if(addr == shmem_address[i]){
 		    pr_info("address callback was shmem");
@@ -228,102 +335,17 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 
 	    }
     }
+
     if(addr == size_lock_address){
 	    pr_info("address callback was size lock");
-	spin_lock(&remote_inode_lock);  
-        int r;
-        struct mm_struct *mm;
-        mm = get_init_mm();
-        spinlock_t *ptl_ptr = NULL;
-        pte_t *temppte;
-        void *ptrdummy;
-        static struct cnthread_inv_msg_ctx send_ctx;
-        loff_t test = 20; 
-
-	int inode_pages_address = size_lock_address;
-        void *buf = get_dummy_page_dma_addr(get_cpu());
-
-		//do invalidation stuff here
-		//based off of shmem_invalidate_page_write
-	struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
-        struct cnthread_inv_msg_ctx *inv_ctx = &((struct cnthread_inv_argv *)inv_argv)->inv_ctx;
-	rdma_ctx = &inv_ctx->rdma_ctx;
-	inv_ctx->original_qp = (rdma_ctx->ret & CACHELINE_ROCE_RKEY_QP_MASK) >> CACHELINE_ROCE_RKEY_QP_SHIFT;
-        create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
-        *((u32 *)(&(inv_ctx->inval_buf[CACHELINE_ROCE_VOFFSET_TO_IP]))) = rdma_ctx->ip_val;
-
-	//pr_info("inv_ctx->original_qp %d", inv_ctx->original_qp);
-	
-	u32 req_qp = (get_id_from_requester(inv_ctx->rdma_ctx.requester) * DISAGG_QP_PER_COMPUTE) + inv_ctx->original_qp;
-        //pr_info("req_qp %d", req_qp);
-	
-	//pr_info("before cn_copy_page");
-	cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
-        temppte, CN_TARGET_PAGE, req_qp, buf);
-        //pr_info("after cn_copy_page");
-	
-	//pr_info("before inval ack");
-	//pr_info("inv_ctx->inval_buf %d", inv_ctx->inval_buf);
-        _cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
-        //pr_info("after inval ack");
-        
-	//pr_info("before FinACK");
-        cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
-        //pr_info("after FinACK");
-
-	remote_lock_status = 0; //0 not held, 1 read mode, 2 write mode
-	pr_info("REMOTE LOCK STATUS DOWNGRADED");
-
-	spin_unlock(&remote_inode_lock);  
-
+	    return 1;
     }
-
-    if(addr == inode_lock_address){
+	*/
+    if(addr == shmem_address[0]){
 	    pr_info("address callback was inode lock");
 	spin_lock(&remote_inode_lock);  
-        int r;
-        struct mm_struct *mm;
-        mm = get_init_mm();
-        spinlock_t *ptl_ptr = NULL;
-        pte_t *temppte;
-        void *ptrdummy;
-        static struct cnthread_inv_msg_ctx send_ctx;
-        loff_t test = 20; 
-
-	int inode_pages_address = inode_lock_address;
-        void *buf = get_dummy_page_dma_addr(get_cpu());
-
-		//do invalidation stuff here
-		//based off of shmem_invalidate_page_write
-	struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
-        struct cnthread_inv_msg_ctx *inv_ctx = &((struct cnthread_inv_argv *)inv_argv)->inv_ctx;
-	rdma_ctx = &inv_ctx->rdma_ctx;
-	inv_ctx->original_qp = (rdma_ctx->ret & CACHELINE_ROCE_RKEY_QP_MASK) >> CACHELINE_ROCE_RKEY_QP_SHIFT;
-        create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
-        *((u32 *)(&(inv_ctx->inval_buf[CACHELINE_ROCE_VOFFSET_TO_IP]))) = rdma_ctx->ip_val;
-
-	//pr_info("inv_ctx->original_qp %d", inv_ctx->original_qp);
-	
-	u32 req_qp = (get_id_from_requester(inv_ctx->rdma_ctx.requester) * DISAGG_QP_PER_COMPUTE) + inv_ctx->original_qp;
-        //pr_info("req_qp %d", req_qp);
-	
-	//pr_info("before cn_copy_page");
-	cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
-        temppte, CN_TARGET_PAGE, req_qp, buf);
-        //pr_info("after cn_copy_page");
-	
-	//pr_info("before inval ack");
-	//pr_info("inv_ctx->inval_buf %d", inv_ctx->inval_buf);
-        _cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
-        //pr_info("after inval ack");
-        
-	//pr_info("before FinACK");
-        cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
-        //pr_info("after FinACK");
-
-	remote_lock_status = 0; //0 not held, 1 read mode, 2 write mode
-	pr_info("REMOTE LOCK STATUS DOWNGRADED");
-
+	invalidate_lock_write(0, inv_argv);
+    	//removed to test for deadlock
 	spin_unlock(&remote_inode_lock);  
 
     }
@@ -1264,8 +1286,9 @@ void simple_dfs_inode_lock(struct inode *inode){
 	if(remote_lock_status == 2){
 		
 	}else{
-		invalidate_lock_write(0);
 		pr_info("upgrading lock status result");
+
+		get_remote_lock_access(0);
 		remote_lock_status = 2; //write
 	}
 
@@ -1305,10 +1328,11 @@ void simple_dfs_inode_lock_shared(struct inode *inode){
 	if(remote_lock_status == 2){
 		
 	}else{
-		invalidate_lock_write(0);
 
 		pr_info("upgrading lock status result");
 		remote_lock_status = 2; //write
+		get_remote_lock_access(0);
+
 	}
 
 
@@ -1441,6 +1465,17 @@ int simple_inode_down_read_killable(struct inode * inode){
 		int result = down_read_killable(&inode->i_rwsem);
 		if(result == 0){ //0 means no error
 			spin_lock(&remote_inode_lock);
+			pr_info("got lock, status was %d", remote_lock_status);
+			if(remote_lock_status == 2){
+
+			}else{
+				pr_info("upgrading lock status result");
+
+				get_remote_lock_access(0);
+				remote_lock_status = 2; //write
+			}
+
+
 		}
 	return result;
 }
@@ -1451,6 +1486,15 @@ int simple_inode_down_write_killable(struct inode * inode){
 	int result = down_write_killable(&inode->i_rwsem);
 		if(result == 0){ //0 means no error
 			spin_lock(&remote_inode_lock);
+			pr_info("got lock, status was %d", remote_lock_status);
+			if(remote_lock_status == 2){
+
+			}else{
+				pr_info("upgrading lock status result");
+
+				get_remote_lock_access(0);
+				remote_lock_status = 2; //write
+			}
 		}
 	return result;
 }
