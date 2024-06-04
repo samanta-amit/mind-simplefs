@@ -157,7 +157,12 @@ static bool get_remote_lock_access(int inode_ino){
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(get_cpu());
         r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
-        BUG_ON(r);
+        //BUG_ON(r);
+	if(r){
+		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
+		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+        	return false;
+	}
 
         temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
 
@@ -1278,28 +1283,37 @@ void simple_dfs_inode_lock(struct inode *inode){
 		init_rwsem(&testsem);
 		initialized = 1;
 	}
-	int i = 0;
-	pr_info("trying to grab lock %d", inode->i_ino);
 
-	//down_write(&testsem);
 	down_write(&inode->i_rwsem);
-	spin_lock(&remote_inode_lock);  
+	//loop to retry remote access
+	while(1){
+		int i = 0;
+		pr_info("trying to grab lock %d", inode->i_ino);
 
-	pr_info("got lock, status was %d", remote_lock_status);
-	if(remote_lock_status == 2){
-		
-	}else{
-		pr_info("upgrading lock status result");
+		//down_write(&testsem);
+		spin_lock(&remote_inode_lock);  
 
-		get_remote_lock_access(0);
-		remote_lock_status = 2; //write
-	}
+		pr_info("got lock, status was %d", remote_lock_status);
+		if(remote_lock_status == 2){
+		return;
+		}else{
+			pr_info("upgrading lock status result");
+
+			bool acquired = get_remote_lock_access(0);
+			if(!acquired){
+				spin_unlock(&remote_inode_lock);
+				continue; //force retry
+			}
+			remote_lock_status = 2; //write
+			return;
+		}
 
 	//try to acquire remote lock
 	//	check to see if we have access to it already in the hashtable
 	//	if we don't, then attempt to grab it
 	//if failed release lock and goto start
 	//if success then return from this function
+	}
 }
 
 void simple_dfs_inode_unlock(struct inode *inode){
@@ -1321,24 +1335,28 @@ void simple_dfs_inode_lock_shared(struct inode *inode){
 		init_rwsem(&testlock);
 		initialized = 1;
 	}
-	int i = 0;
-	pr_info("test lock address %d", &testlock);
-	pr_info("trying to get read lock %d", inode->i_ino);
-	
 	down_write(&inode->i_rwsem);
-	spin_lock(&remote_inode_lock);  
-	pr_info("got lock, status was %d", remote_lock_status);
-	if(remote_lock_status == 2){
-		
-	}else{
+	while(1){
+		int i = 0;
+		pr_info("test lock address %d", &testlock);
+		pr_info("trying to get read lock %d", inode->i_ino);
 
-		pr_info("upgrading lock status result");
-		get_remote_lock_access(0);
-		remote_lock_status = 2; //write
+		spin_lock(&remote_inode_lock);  
+		pr_info("got lock, status was %d", remote_lock_status);
+		if(remote_lock_status == 2){
+		return;
+		}else{
+
+			pr_info("upgrading lock status result");
+			bool acquired = get_remote_lock_access(0);
+			if(!acquired){
+				spin_unlock(&remote_inode_lock);
+			}
+			remote_lock_status = 2; //write
+			return;
+		}
 
 	}
-
-
 	//down_read(&inode->i_rwsem);
 }
 
@@ -1362,20 +1380,65 @@ int simple_dfs_inode_trylock(struct inode *inode){
 		initialized = 1;
 	}
 	pr_info("inode trylock write");
-	return down_write_trylock(&inode->i_rwsem);
-	//return down_write_trylock(&testsem);
+	int acquired = down_write_trylock(&inode->i_rwsem);
+	if(!acquired){
+		return acquired;//return down_write_trylock(&testsem);
+	}
+	while(1){
+		int i = 0;
+		spin_lock(&remote_inode_lock);  
+		pr_info("got lock, status was %d", remote_lock_status);
+		if(remote_lock_status == 2){
+			return;
+		}else{
+
+			pr_info("upgrading lock status result");
+			bool acquired = get_remote_lock_access(0);
+			if(!acquired){
+				spin_unlock(&remote_inode_lock);
+			}
+			remote_lock_status = 2; //write
+			return;
+		}
+
+	}
+
+
 
 }
 int simple_dfs_inode_trylock_shared(struct inode *inode){
+
 	if(!initialized){
 		init_rwsem(&testsem);
 		initialized = 1;
 	}
-	pr_info("inode trylock shared");
-		//return down_read_trylock(&inode->i_rwsem);
-		return down_write_trylock(&inode->i_rwsem);
+	pr_info("inode trylock write");
+	int acquired = down_write_trylock(&inode->i_rwsem);
+	if(!acquired){
+		return acquired;//return down_write_trylock(&testsem);
+	}
+	while(1){
+		int i = 0;
+		spin_lock(&remote_inode_lock);  
+		pr_info("got lock, status was %d", remote_lock_status);
+		if(remote_lock_status == 2){
+		return;
+		}else{
 
-		//return down_read_trylock(&testsem);
+			pr_info("upgrading lock status result");
+			bool acquired = get_remote_lock_access(0);
+			if(!acquired){
+				spin_unlock(&remote_inode_lock);
+			}
+			remote_lock_status = 2; //write
+			return;
+
+		}
+
+	}
+
+
+
 
 }
 
@@ -1464,22 +1527,32 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 }
 
 int simple_inode_down_read_killable(struct inode * inode){
-		pr_info("down read killable inside of dfs");
-		int result = down_read_killable(&inode->i_rwsem);
+	pr_info("down read killable inside of dfs");
+		int result = down_write_killable(&inode->i_rwsem);
+
+	while(1){
 		if(result == 0){ //0 means no error
 			spin_lock(&remote_inode_lock);
 			pr_info("got lock, status was %d", remote_lock_status);
 			if(remote_lock_status == 2){
-
+				return result;
 			}else{
 				pr_info("upgrading lock status result");
 
-				get_remote_lock_access(0);
+				bool acquired = get_remote_lock_access(0);
+				if(!acquired){
+					spin_unlock(&remote_inode_lock);
+					continue;
+				}
 				remote_lock_status = 2; //write
+				return result;
 			}
 
 
+		}else{
+			return result;
 		}
+	}
 	return result;
 }
 int simple_inode_down_write_killable(struct inode * inode){
@@ -1487,19 +1560,31 @@ int simple_inode_down_write_killable(struct inode * inode){
 	pr_info("down write killable inside of dfs");
 
 	int result = down_write_killable(&inode->i_rwsem);
+	while(1){
 		if(result == 0){ //0 means no error
 			spin_lock(&remote_inode_lock);
 			pr_info("got lock, status was %d", remote_lock_status);
 			if(remote_lock_status == 2){
-
+				return result;
 			}else{
 				pr_info("upgrading lock status result");
 
-				get_remote_lock_access(0);
+				bool acquired = get_remote_lock_access(0);
+				if(!acquired){
+					spin_unlock(&remote_inode_lock);
+					continue;
+				}
 				remote_lock_status = 2; //write
+				return result;
 			}
+
+
+		}else{
+			return result;
 		}
+	}
 	return result;
+
 }
 
 static const struct inode_operations simplefs_inode_ops = {
