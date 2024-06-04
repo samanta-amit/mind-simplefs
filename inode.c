@@ -345,6 +345,9 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    pr_info("address callback was inode lock");
 	spin_lock(&remote_inode_lock);  
 	invalidate_lock_write(0, inv_argv);
+
+	//downgrade copy (need to separate for invalid and shared)
+	remote_lock_status = 0;
     	//removed to test for deadlock
 	spin_unlock(&remote_inode_lock);  
 
@@ -1330,8 +1333,8 @@ void simple_dfs_inode_lock_shared(struct inode *inode){
 	}else{
 
 		pr_info("upgrading lock status result");
-		remote_lock_status = 2; //write
 		get_remote_lock_access(0);
+		remote_lock_status = 2; //write
 
 	}
 
