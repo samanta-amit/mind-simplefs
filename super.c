@@ -9,6 +9,9 @@
 
 #include "simplefs.h"
 
+struct super_block * super_block;
+
+
 static struct kmem_cache *simplefs_inode_cache;
 
 int simplefs_init_inode_cache(void)
@@ -186,6 +189,12 @@ static struct super_operations simplefs_super_ops = {
 /* Fill the struct superblock from partition superblock */
 int simplefs_fill_super(struct super_block *sb, void *data, int silent)
 {
+
+	//store this so that we can get access to the super block
+	//pointer whenever we need it
+    super_block = sb;
+
+
     struct buffer_head *bh = NULL;
     struct simplefs_sb_info *csb = NULL;
     struct simplefs_sb_info *sbi = NULL;

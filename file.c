@@ -116,6 +116,11 @@ static int simplefs_write_begin(struct file *file,
     if (pos + len > SIMPLEFS_MAX_FILESIZE)
         return -ENOSPC;
     nr_allocs = max(pos + len, file->f_inode->i_size) / SIMPLEFS_BLOCK_SIZE;
+
+	
+	//write_begin is i_lock held?
+	int result = spin_is_locked(&file->f_inode->i_lock);
+	pr_info("status of i_lock is %d", result);
     if (nr_allocs > file->f_inode->i_blocks - 1)
         nr_allocs -= file->f_inode->i_blocks - 1;
     else
@@ -203,6 +208,44 @@ end:
     return ret;
 }
 
+
+
+/**
+ * generic_file_write_iter - write data to a file
+ * @iocb:	IO state structure
+ * @from:	iov_iter with data to write
+ *
+ * This is a wrapper around __generic_file_write_iter() to be used by most
+ * filesystems. It takes care of syncing the file in case of O_SYNC file
+ * and acquires i_mutex as needed.
+ */
+ssize_t simple_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
+{
+	struct file *file = iocb->ki_filp;
+	struct inode *inode = file->f_mapping->host;
+	ssize_t ret;
+
+	inode_lock(inode); //sync with remote 
+	//now sync the size with remote
+	i_size_read(inode); 
+	//don't need to do anything with the size 
+	//here, just need to make sure it is up to date
+	//shouldn't have any contention on the size
+	//because i_size_write shouldn't be called
+	//unless they old the i_rwsem in write mode (which we currently hold)
+	//this should always go through inode_lock (need to ensure this)
+	
+	ret = generic_write_checks(iocb, from);
+	if (ret > 0)
+		ret = __generic_file_write_iter(iocb, from);
+	inode_unlock(inode);
+
+	if (ret > 0)
+		ret = generic_write_sync(iocb, ret);
+	return ret;
+}
+
+
 const struct address_space_operations simplefs_aops = {
     .readpage = simplefs_readpage,
     .writepage = simplefs_writepage,
@@ -214,6 +257,6 @@ const struct file_operations simplefs_file_ops = {
     .llseek = generic_file_llseek,
     .owner = THIS_MODULE,
     .read_iter = generic_file_read_iter,
-    .write_iter = generic_file_write_iter,
+    .write_iter = simple_file_write_iter,
     .fsync = generic_file_fsync,
 };

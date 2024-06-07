@@ -57,6 +57,9 @@ extern unsigned long shmem_address[10];
 extern unsigned long inode_address[10];
 extern unsigned long size_lock_address; 
 extern unsigned long inode_lock_address; 
+extern unsigned long inode_size_address[10];
+extern unsigned int inode_size_status[10];
+extern struct super_block * super_block;
 static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 
 
@@ -72,7 +75,8 @@ int remote_size_status = 0; //0 not held, 1 read mode, 2 write mode
 //this is protected by the testsem
 int initialized = 0;
 static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
-
+struct inode *simplefs_iget(struct super_block *sb, unsigned long ino);
+int REC_NACK = -1024;
 
 static int mind_fetch_page_write(
         uintptr_t shmem_address, void *page_dma_address, size_t *data_size)
@@ -114,7 +118,14 @@ static int mind_fetch_page_write(
         if(r <= 0){
                 cancel_waiting_for_nack(wait_node);
 		pr_info("stopped waiting");
-		return r;
+		pr_info("RECEIVED NACK");
+		pr_info("RECEIVED NACK");
+		pr_info("RECEIVED NACK");
+		pr_info("RECEIVED NACK");
+		pr_info("RECEIVED NACK");
+		pr_info("RECEIVED NACK");
+
+		return REC_NACK;
 	}
         r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
@@ -131,7 +142,8 @@ static int mind_fetch_page_write(
 
 
 
-static bool get_remote_lock_access(int inode_ino){
+
+static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
 
 	//pr_info("invalidate_page_write 1");
         uintptr_t inode_pages_address;
@@ -146,7 +158,7 @@ static bool get_remote_lock_access(int inode_ino){
 	//pr_info("invalidate_page_write 2");
 
 
-        inode_pages_address = inode_lock_address;
+        inode_pages_address = lock_address;
 
 	int cpu_id = get_cpu();
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
@@ -158,7 +170,7 @@ static bool get_remote_lock_access(int inode_ino){
         void *buf = get_dummy_page_dma_addr(get_cpu());
         r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         //BUG_ON(r);
-	if(r){
+	if(r == REC_NACK){
 		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
 		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
         	return false;
@@ -198,7 +210,7 @@ static bool get_remote_lock_access(int inode_ino){
 }
 
 
-static bool invalidate_lock_write(int inode_ino, void *inv_argv){
+static bool invalidate_size_write(int inode_ino, void *inv_argv){
 
         uintptr_t inode_pages_address;
         int r;
@@ -210,7 +222,95 @@ static bool invalidate_lock_write(int inode_ino, void *inv_argv){
         static struct cnthread_inv_msg_ctx send_ctx;
         loff_t test = 20; 
 	int i;
-        inode_pages_address = inode_lock_address;
+        inode_pages_address = inode_size_address[inode_ino];
+	
+	int cpu_id = get_cpu();
+
+        //spin_lock(&dummy_page_lock);
+        spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        size_t data_size;
+        void *buf = get_dummy_page_dma_addr(get_cpu());
+        //r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+        //BUG_ON(r);
+
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+
+        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+
+        //writes data to that page
+        //copy data into dummy buffer, and send to switch
+        //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+
+
+	struct inode * inode = simplefs_iget(super_block, inode_ino);
+	//can't use global inode lock to sync since it would deadlock
+
+	//already have inode size lock held so it should be synced 
+	//naked reads only occur in writes, so there wouldn't be stale reads
+	//since we don't have concurrent writes
+	((int *)get_dummy_page_buf_addr(get_cpu()))[0] = inode->i_size;//NEED to have inode lock for this 
+	pr_info("INVALIDATED SIZE WAS %d", inode->i_size);
+	//can't use i_size_read since it will be an infinite loop
+
+        //for(i = 0; i < 20; i++){
+        //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
+        //}
+
+
+        //spin_lock(ptl_ptr);
+	//pr_info("inside ptl_ptr lock");
+
+	struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
+        struct cnthread_inv_msg_ctx *inv_ctx = &((struct cnthread_inv_argv *)inv_argv)->inv_ctx;
+	
+	rdma_ctx = &inv_ctx->rdma_ctx;
+	inv_ctx->original_qp = (rdma_ctx->ret & CACHELINE_ROCE_RKEY_QP_MASK) >> CACHELINE_ROCE_RKEY_QP_SHIFT;
+        create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
+        *((u32 *)(&(inv_ctx->inval_buf[CACHELINE_ROCE_VOFFSET_TO_IP]))) = rdma_ctx->ip_val;
+
+	//pr_info("inv_ctx->original_qp %d", inv_ctx->original_qp);
+	
+	u32 req_qp = (get_id_from_requester(inv_ctx->rdma_ctx.requester) * DISAGG_QP_PER_COMPUTE) + inv_ctx->original_qp;
+        //pr_info("req_qp %d", req_qp);
+	
+	//pr_info("before cn_copy_page");
+	cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        temppte, CN_TARGET_PAGE, req_qp, buf);
+        //pr_info("after cn_copy_page");
+	
+	//pr_info("before inval ack");
+	//pr_info("inv_ctx->inval_buf %d", inv_ctx->inval_buf);
+        _cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
+        //pr_info("after inval ack");
+        
+	//pr_info("before FinACK");
+        cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
+        //pr_info("after FinACK");
+	
+	//spin_unlock(ptl_ptr);
+	//spin_unlock(&dummy_page_lock);
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+	//spin_unlock_irq(&mapping->tree_lock);
+	return true;
+}
+
+
+
+static bool invalidate_lock_write(int inode_ino, void *inv_argv, unsigned long lock_address){
+
+        uintptr_t inode_pages_address;
+        int r;
+        struct mm_struct *mm;
+        mm = get_init_mm();
+        spinlock_t *ptl_ptr = NULL;
+        pte_t *temppte;
+        void *ptrdummy;
+        static struct cnthread_inv_msg_ctx send_ctx;
+        loff_t test = 20; 
+	int i;
+        inode_pages_address = lock_address;
 	
 	int cpu_id = get_cpu();
 
@@ -279,7 +379,6 @@ static bool invalidate_lock_write(int inode_ino, void *inv_argv){
 
 
 
-
 u64 shmem_address_check(void *addr, unsigned long size)
 {
 
@@ -305,6 +404,13 @@ extern unsigned long inode_lock_address;
 
 		}
 	}
+	for(i = 0; i < 10; i++){
+		if(addr == inode_size_address[i]){
+			pr_info("address found was an inode size");
+			return 1;
+
+		}
+	}
 	if(addr == size_lock_address){
 		pr_info("address found was size lock");
 		return 1;
@@ -314,6 +420,7 @@ extern unsigned long inode_lock_address;
 		pr_info("address found was inode lock");
 		return 1;
 	}
+
 //check to see if this is an address we are using here
 	return 0;
 }
@@ -340,16 +447,33 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 
 	    }
     }
+	*/
+   for(i = 0; i < 10; i++){
+	    if(addr == inode_size_address[i]){
+		    pr_info("address callback was an inode size");
+			spin_lock(&size_lock);  
+
+		    invalidate_size_write(i, inv_argv);
+			spin_unlock(&size_lock);  
+
+			//inside of invalidate_size_write	
+			
+		    return 1;
+
+	    }
+
+   }
 
     if(addr == size_lock_address){
-	    pr_info("address callback was size lock");
+		pr_info("not quite sure if we need this lock");
+
 	    return 1;
     }
-	*/
+	
     if(addr == inode_lock_address){
 	    pr_info("address callback was inode lock");
 	spin_lock(&remote_inode_lock);  
-	invalidate_lock_write(0, inv_argv);
+	invalidate_lock_write(0, inv_argv, inode_lock_address);
 
 	pr_info("RECEIVED INVALIDATION");
 	pr_info("RECEIVED INVALIDATION");
@@ -373,7 +497,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 /* Get inode ino from disk */
 struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
 {
-
+	pr_info("simplefs_iget function called");
 	if(!initialized){
 		init_rwsem(&testsem);
 		initialized = 1;
@@ -396,6 +520,13 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
     inode = iget_locked(sb, ino);
     if (!inode)
         return ERR_PTR(-ENOMEM);
+
+    int test = rwsem_is_locked(&inode->i_rwsem);
+	pr_info("rwsem is locked %d", test);
+	pr_info("rwsem is locked %d", test);
+	pr_info("rwsem is locked %d", test);
+	pr_info("rwsem is locked %d", test);
+	pr_info("rwsem is locked %d", test);
 
     /* If inode is in cache, return it */
     if (!(inode->i_state & I_NEW))
@@ -444,6 +575,8 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
     brelse(bh);
 
     /* Unlock the inode to make it usable */
+
+    //only for the i_lock not the rwsem lock
     unlock_new_inode(inode);
 
     return inode;
@@ -1284,6 +1417,7 @@ int test_inode_lock_simple(void){
 	return 0;
 }
 
+
 void lock_loop(int ino){
 	while(1){
 		int i = 0;
@@ -1297,7 +1431,7 @@ void lock_loop(int ino){
 		}else{
 			pr_info("upgrading lock status result");
 
-			bool acquired = get_remote_lock_access(0);
+			bool acquired = get_remote_lock_access(0, inode_lock_address);
 			if(!acquired){
 				spin_unlock(&remote_inode_lock);
 				continue; //force retry
@@ -1424,15 +1558,148 @@ pr_info("******INODE LOCK NESTED CALLED");
 }
 
 
+static int get_remote_size_access(int inode_ino){
+
+	//pr_info("invalidate_page_write 1");
+        uintptr_t inode_pages_address;
+        int r;
+        struct mm_struct *mm;
+        mm = get_init_mm();
+        spinlock_t *ptl_ptr = NULL;
+        pte_t *temppte;
+        void *ptrdummy;
+        static struct cnthread_inv_msg_ctx send_ctx;
+        loff_t test = 20; 
+	//pr_info("invalidate_page_write 2");
+
+
+        inode_pages_address = inode_size_address[inode_ino];
+
+	int cpu_id = get_cpu();
+	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        //spin_lock(&dummy_page_lock);
+       	//pr_info("invalidate_page_write 3");
+
+        size_t data_size;
+        void *buf = get_dummy_page_dma_addr(get_cpu());
+        r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+        //BUG_ON(r);
+	if(r == REC_NACK){
+		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
+		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+        	return -1;
+	}
+
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+
+        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+
+
+
+       	int result = ((int *)get_dummy_page_buf_addr(get_cpu()))[0];
+
+	//pr_info("invalidate_page_write 4");
+
+        //writes data to that page
+        //copy data into dummy buffer, and send to switch
+        //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+
+	//int i;
+        //for(i = 0; i < 20; i++){
+        //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
+        //}
+
+	//pr_info("invalidate_page_write 5");
+
+        //spin_lock(ptl_ptr);
+
+        //cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        //temppte, CN_OTHER_PAGE, 0, buf);
+        //pr_info("invalidate_page_write 6");
+
+        //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
+
+        // spin_unlock(ptl_ptr);
+        //spin_unlock(&dummy_page_lock);
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        //spin_unlock_irq(&mapping->tree_lock);
+
+        return result;
+}
+
+
+
+//returns -1 if we already have the status
+//loops until access is gained
+//will return new size when accessed
+int size_loop(int ino){
+	while(1){
+		int i = 0;
+
+		//down_write(&testsem);
+		spin_lock(&size_lock);  
+
+		pr_info("got lock, status was %d", remote_lock_status);
+		if(inode_size_status[ino] == 2){
+			return -1;
+		}else{
+			pr_info("upgrading lock status result");
+
+			int result = get_remote_size_access(ino);
+			if(result == -1){
+				spin_unlock(&size_lock);
+				continue; //force retry
+			}
+			inode_size_status[ino] = 2; //write
+			return result;
+		}
+
+		//try to acquire remote lock
+		//	check to see if we have access to it already in the hashtable
+		//	if we don't, then attempt to grab it
+		//if failed release lock and goto start
+		//if success then return from this function
+	}
+
+}
+
 
 
 int  test_counter = 0;
 
 loff_t simple_i_size_read(const struct inode *inode){
-	spin_lock(&size_lock);  
+	pr_info("reading i_size");
+	if(inode->i_ino != 0){
+		int size = size_loop(inode->i_ino);	
+		//lock acquired in size loop
+		if(size == -1){
+			//this means that we already have access
+			loff_t temp = inode->i_size;
+			pr_info("already had size access");
+			spin_unlock(&size_lock);  
 
-	test_counter ++;
-	pr_info("reading size of inode iteration %d", test_counter);
+			return temp; 
+		}else{
+
+			//have to remove const here
+			struct inode * non_const_inode = (struct inode *)inode;
+			//non_const_inode->i_size == size;
+			pr_info("new size %d",size);	
+			loff_t temp = inode->i_size;
+			pr_info("size read %d", temp);
+			spin_unlock(&size_lock);  
+			return temp; 
+
+		}
+	}else{
+		pr_info("inode was superblock");
+		return inode->i_size;
+	}
+
+
+
 	//acquire lock in read mode
 	//
 	//
@@ -1451,28 +1718,55 @@ loff_t simple_i_size_read(const struct inode *inode){
 	//	wait for current request to finish
 	//	already have it, proceed to read
 	//	release locks before returning
-	loff_t temp = inode->i_size;
 	//up_read(inode->i_size_rwsem); //NOTE THIS HAS TO BE INITIALIZED in inode_init_always(?)
-	spin_unlock(&size_lock);  
 
 	//up_read(&testsem);
 
-	return temp; 
 }
 
 void simple_i_size_write(struct inode *inode, loff_t i_size){
 	pr_info("writing size of inode");
-	spin_lock(&size_lock);  
+	pr_info("writing size of inode");
+	pr_info("writing size of inode");
+	pr_info("writing size of inode");
+	pr_info("writing size of inode");
+	pr_info("writing size of inode");
+	pr_info("writing size of inode");
+	pr_info("writing size of inode");
+
+	if(inode->i_ino != 0){
+		int size = size_loop(inode->i_ino);	
+		//lock acquired in size loop
+		if(size == -1){
+			//this means that we already have access
+			pr_info("already had size access");
+
+			inode->i_size = i_size;
+			spin_unlock(&size_lock);  
+			return; 
+		}else{
+			pr_info("gained size access");
+			inode->i_size = i_size;
+			spin_unlock(&size_lock);  
+			return; 
+
+		}
+	}else{
+		pr_info("inode was super block");
+		inode->i_size = i_size;
+
+	}
+
+
 
 	//down_write(inode->i_size_rwsem); //note this has to be initialized in inode_init_always(?)
 	//down_write(&testsem);
 	//acquire lock in write mode (blocking local access)
 	//acquire remote access in write mode
 	//update size locally then remotely
-	inode->i_size = i_size;
+	//inode_sizes[inode->i_ino] = i_size;
 	//release locks before returning
 	//up_write(inode->i_size_rwsem); //note this has to be initialized in inode_init_always(?)
-	spin_unlock(&size_lock);  
 
 //	up_write(&testsem);
 }

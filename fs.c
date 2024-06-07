@@ -23,9 +23,11 @@
 unsigned long sharedaddress;
 unsigned long shmem_address[10];
 unsigned long inode_address[10];
+unsigned long inode_size_address[10];
+unsigned int inode_size_status[10];
 unsigned long size_lock_address;
 unsigned long inode_lock_address;
-unsigned long combined_address[22];
+unsigned long combined_address[32];
 static int readAddress = 0;
 //https://lynxbee.com/passing-command-line-arguments-parameters-to-linux-kernel-module/#.ZAUI5oDMKCg
 //https://tldp.org/LDP/lkmpg/2.4/html/x354.htm (also used this for printing longs)
@@ -125,6 +127,28 @@ static int __init simplefs_init(void)
 	pr_info("size lock and inode lock %ld %ld", size_lock_address, inode_lock_address);
 
 
+	pr_info("inode size addresses:");
+	for(i = 0; i < 10; i++){
+		inode_size_address[i] = (uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
+		pr_info("%ld, ", inode_size_address[i]);
+	}
+
+
+	pr_info("single print inode size addresses %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld", inode_size_address[0],
+			inode_size_address[1],
+			inode_size_address[2],
+			inode_size_address[3],
+			inode_size_address[4],
+			inode_size_address[5],
+			inode_size_address[6],
+			inode_size_address[7],
+			inode_size_address[8],
+			inode_size_address[9]
+	       );
+
+
+
+
 
             pr_info("\n");
     }else{
@@ -138,6 +162,10 @@ static int __init simplefs_init(void)
 
 	    size_lock_address = combined_address[20];
 	    inode_lock_address = combined_address[21];
+
+	    for(i = 22; i < 31; i++){
+		inode_size_address[i-22] = combined_address[i];
+	    }
 
 	    pr_info("read addresses:");
 	    for(i = 0; i < 10; i++){
@@ -153,8 +181,23 @@ static int __init simplefs_init(void)
 
 
 	    pr_info("size lock address %ld, inode lock address %ld", size_lock_address, inode_lock_address);
+
+            pr_info("inode size addresses:");
+            for(i = 0; i < 10; i++){
+                    pr_info("%ld, ", inode_size_address[i]);
+            }
+            pr_info("\n");
+
+
+
     }
-   
+  
+	//inode size status setup
+	for(i = 0; i < 10; i++){
+		inode_size_status[i] = 0;		
+	}
+    
+
     /*
     for(i = 0; i < 10; i++){
 	    pr_info("alloc kshmem address %ld", sharedaddress); 
