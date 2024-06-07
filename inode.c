@@ -464,11 +464,6 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 		    pr_info("RECEIVED SIZE INVALIDATION");
 		    pr_info("RECEIVED SIZE INVALIDATION");
 
-
-
-
-
-
 			spin_lock(&size_lock);  
 
 			invalidate_size_write(i, inv_argv);
@@ -480,7 +475,6 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 		    return 1;
 
 	    }
-
    }
 
     if(addr == size_lock_address){
@@ -1695,7 +1689,7 @@ int size_loop(int ino){
 int  test_counter = 0;
 
 loff_t simple_i_size_read(const struct inode *inode){
-	pr_info("reading i_size");
+	pr_info("reading i_size for inode %d" inode->i_ino);
 	if(inode->i_ino != 0){
 		int size = size_loop(inode->i_ino);	
 		//lock acquired in size loop
@@ -1750,6 +1744,7 @@ loff_t simple_i_size_read(const struct inode *inode){
 }
 
 void simple_i_size_write(struct inode *inode, loff_t i_size){
+	pr_info("writing i_size for inode %d", inode->i_ino);
 	pr_info("writing size of inode");
 	pr_info("writing size of inode");
 	pr_info("writing size of inode");
