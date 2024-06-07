@@ -457,7 +457,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	*/
    for(i = 0; i < 10; i++){
 	    if(addr == inode_size_address[i]){
-		    pr_info("RECEIVED SIZE INVALIDATION");
+		    pr_info("RECEIVED SIZE INVALIDATION %d", i);
 		    pr_info("RECEIVED SIZE INVALIDATION");
 		    pr_info("RECEIVED SIZE INVALIDATION");
 		    pr_info("RECEIVED SIZE INVALIDATION");
@@ -467,7 +467,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 			spin_lock(&size_lock);  
 
 			invalidate_size_write(i, inv_argv);
-			inode_size_status[i] == 0;
+			inode_size_status[i] = 0;
 			spin_unlock(&size_lock);  
 
 			//inside of invalidate_size_write	
@@ -1654,7 +1654,7 @@ int size_loop(int ino){
 		//down_write(&testsem);
 		spin_lock(&size_lock);  
 
-		pr_info("got lock, status was %d", remote_lock_status);
+		pr_info("got lock, status was %d", inode_size_status[ino]);
 		if(inode_size_status[ino] == 2){
 			return -1;
 		}else{
@@ -1669,9 +1669,11 @@ int size_loop(int ino){
 			int result = get_remote_size_access(ino);
 			if(result == -1){
 				spin_unlock(&size_lock);
+				pr_info("retrying size loop");
 				continue; //force retry
 			}
 			inode_size_status[ino] = 2; //write
+			pr_info("updated inode size status %d", inode_size_status[ino]);
 			return result;
 		}
 
@@ -1689,7 +1691,7 @@ int size_loop(int ino){
 int  test_counter = 0;
 
 loff_t simple_i_size_read(const struct inode *inode){
-	pr_info("reading i_size for inode %d" inode->i_ino);
+	pr_info("reading i_size for inode %d", inode->i_ino);
 	if(inode->i_ino != 0){
 		int size = size_loop(inode->i_ino);	
 		//lock acquired in size loop
