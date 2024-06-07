@@ -1706,11 +1706,12 @@ loff_t simple_i_size_read(const struct inode *inode){
 			pr_info("requesting size information");
 			//have to remove const here
 			struct inode * non_const_inode = (struct inode *)inode;
-			//non_const_inode->i_size == size;
 	
 			pr_info("new size %d",size);	
 			loff_t temp = inode->i_size;
 			pr_info("size read %d", temp);
+			non_const_inode->i_size = size;
+			temp = non_const_inode->i_size;
 			spin_unlock(&size_lock);  
 			return temp; 
 
