@@ -407,6 +407,13 @@ extern unsigned long inode_lock_address;
 	for(i = 0; i < 10; i++){
 		if(addr == inode_size_address[i]){
 			pr_info("address found was an inode size");
+			pr_info("address found was an inode size");
+			pr_info("address found was an inode size");
+			pr_info("address found was an inode size");
+			pr_info("address found was an inode size");
+			pr_info("address found was an inode size");
+			pr_info("address found was an inode size");
+
 			return 1;
 
 		}
@@ -450,10 +457,21 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	*/
    for(i = 0; i < 10; i++){
 	    if(addr == inode_size_address[i]){
-		    pr_info("address callback was an inode size");
+		    pr_info("RECEIVED SIZE INVALIDATION");
+		    pr_info("RECEIVED SIZE INVALIDATION");
+		    pr_info("RECEIVED SIZE INVALIDATION");
+		    pr_info("RECEIVED SIZE INVALIDATION");
+		    pr_info("RECEIVED SIZE INVALIDATION");
+		    pr_info("RECEIVED SIZE INVALIDATION");
+
+
+
+
+
+
 			spin_lock(&size_lock);  
 
-		    invalidate_size_write(i, inv_argv);
+			invalidate_size_write(i, inv_argv);
 			inode_size_status[i] == 0;
 			spin_unlock(&size_lock);  
 
@@ -1646,7 +1664,13 @@ int size_loop(int ino){
 		if(inode_size_status[ino] == 2){
 			return -1;
 		}else{
-			pr_info("upgrading lock status result");
+			pr_info("updating size status ");
+			pr_info("updating size status ");
+			pr_info("updating size status ");
+			pr_info("updating size status ");
+			pr_info("updating size status ");
+			pr_info("updating size status ");
+			pr_info("updating size status ");
 
 			int result = get_remote_size_access(ino);
 			if(result == -1){
@@ -1683,7 +1707,7 @@ loff_t simple_i_size_read(const struct inode *inode){
 
 			return temp; 
 		}else{
-
+			pr_info("requesting size information");
 			//have to remove const here
 			struct inode * non_const_inode = (struct inode *)inode;
 			//non_const_inode->i_size == size;
