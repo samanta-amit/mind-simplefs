@@ -454,6 +454,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 			spin_lock(&size_lock);  
 
 		    invalidate_size_write(i, inv_argv);
+			inode_size_status[i] == 0;
 			spin_unlock(&size_lock);  
 
 			//inside of invalidate_size_write	
