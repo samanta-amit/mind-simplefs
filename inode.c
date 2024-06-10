@@ -490,8 +490,8 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 
     }
 
-//do page sync (in file.c)
-page_testing_invalidate_page_callback(addr, inv_argv);
+    //do page sync (in file.c)
+    page_testing_invalidate_page_callback(addr, inv_argv);
 
     
     return 1024;
@@ -1648,6 +1648,7 @@ int size_loop(int ino){
 		spin_lock(&size_lock);  
 
 		pr_info("got lock, status was %d", inode_size_status[ino]);
+		pr_info("inode size for inode address %d is %d", ino, inode_size_address[ino]);
 		if(inode_size_status[ino] == 2){
 			return -1;
 		}else{
@@ -1685,6 +1686,10 @@ int  test_counter = 0;
 
 loff_t simple_i_size_read(const struct inode *inode){
 	pr_info("reading i_size for inode %d", inode->i_ino);
+	pr_info("reading i_size for inode %d", inode->i_ino);
+	pr_info("reading i_size for inode %d", inode->i_ino);
+	pr_info("reading i_size for inode %d", inode->i_ino);
+
 	if(inode->i_ino != 0){
 		int size = size_loop(inode->i_ino);	
 		//lock acquired in size loop
