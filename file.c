@@ -1677,6 +1677,8 @@ ssize_t simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *fr
 	ssize_t ret;
 
 	inode_lock(inode);
+	i_size_read(inode); 
+
 	ret = generic_write_checks(iocb, from);
 	if (ret > 0)
 		ret = __simplefs_generic_file_write_iter(iocb, from);
@@ -1686,6 +1688,7 @@ ssize_t simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *fr
 		ret = generic_write_sync(iocb, ret);
 	return ret;
 }
+
 
 const struct address_space_operations simplefs_aops = {
     .readpage = simplefs_readpage,
