@@ -65,7 +65,7 @@ static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_
 
 struct rw_semaphore testsem;
 struct rw_semaphore testlock;
-DEFINE_SPINLOCK(dummy_page_lock);
+DEFINE_SPINLOCK(inode_dummy_page_lock);
 DEFINE_SPINLOCK(remote_inode_lock);
 
 int remote_lock_status = 0; //0 not held, 1 read mode, 2 write mode
@@ -86,7 +86,7 @@ static int mind_fetch_page_write(
         int r;
         unsigned long start_time = jiffies;
 
-	spin_lock(&dummy_page_lock);
+	spin_lock(&inode_dummy_page_lock);
 
         ret_buf.data_size = PAGE_SIZE;
         ret_buf.data = page_dma_address;
@@ -97,7 +97,7 @@ static int mind_fetch_page_write(
         wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
         BUG_ON(!wait_node);
 	
-	spin_unlock(&dummy_page_lock);
+	spin_unlock(&inode_dummy_page_lock);
 
         //mind_pr_cache_dir_state(
         //        "BEFORFE PFAULT ACK/NACK",
@@ -390,13 +390,7 @@ extern unsigned long size_lock_address;
 extern unsigned long inode_lock_address; 
 */
 	int i;
-	for(i = 0; i < 10; i++){
-		if(addr == shmem_address[i]){
-			pr_info("address found was shmem");
-			return 1;
-
-		}
-	}
+	/*
 	for(i = 0; i < 10; i++){
 		if(addr == inode_address[i]){
 			pr_info("address found was inode");
@@ -404,6 +398,7 @@ extern unsigned long inode_lock_address;
 
 		}
 	}
+	*/
 	for(i = 0; i < 10; i++){
 		if(addr == inode_size_address[i]){
 			pr_info("address found was an inode size");
@@ -428,8 +423,8 @@ extern unsigned long inode_lock_address;
 		return 1;
 	}
 
-//check to see if this is an address we are using here
-	return 0;
+	//check to see if this is a page address
+	return page_shmem_address_check(addr, size);
 }
 
 
@@ -439,14 +434,8 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
     pr_info("invalidate page callback called address %ld", addr);
     int i;
+    
     /*
-    for(i = 0; i < 10; i++){
-	    if(addr == shmem_address[i]){
-		    pr_info("address callback was shmem");
-		    return 1;
-
-	    }
-    }
     for(i = 0; i < 10; i++){
 	    if(addr == inode_address[i]){
 		    pr_info("address callback  was inode");
@@ -500,6 +489,10 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	spin_unlock(&remote_inode_lock);  
 
     }
+
+//do page sync (in file.c)
+page_testing_invalidate_page_callback(addr, inv_argv);
+
     
     return 1024;
 }

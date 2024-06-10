@@ -126,8 +126,15 @@ extern uint32_t simplefs_ext_search(struct simplefs_file_ei_block *index,
                                     uint32_t iblock);
 
 
+//versions for locking and inode sync
 u64 shmem_address_check(void *addr, unsigned long size);
 u64 testing_invalidate_page_callback(void *addr, void *inv_argv);
+
+//versions for page specifically
+u64 page_shmem_address_check(void *addr, unsigned long size);
+u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv);
+
+
 
 
 /* Getters for superbock and inode */
