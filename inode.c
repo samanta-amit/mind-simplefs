@@ -1813,6 +1813,60 @@ int simple_inode_down_write_killable(struct inode * inode){
 
 }
 
+
+//can set the size of the inode
+int dfs_setattr (struct dentry * dentry, struct iattr * iattr){
+
+	pr_info("setting attribute");
+	//check to see if this is a size set
+	if(iattr->ia_mode == ATTR_SIZE){
+		pr_info("setting size attribute");
+
+	}
+
+	return simple_setattr(dentry, iattr);
+
+	/*
+	//taken from the FUSE filesystem set_attr function
+	//https://elixir.bootlin.com/linux/v4.15.16/source/fs/fuse/dir.c#L1718
+	struct inode * inode = d_inode(dentry);
+
+	if(inode->i_ino != 0){
+		int size = size_loop(inode->i_ino);	
+		//lock acquired in size loop
+		if(size == -1){
+			//this means that we already have access
+			pr_info("already had size access");
+
+			//inode->i_size = i_size;
+			//call the default setattr function here
+			spin_unlock(&size_lock);  
+			return; 
+		}else{
+			pr_info("gained size access");
+			//inode->i_size = i_size;
+			//call the default setattr function here
+			spin_unlock(&size_lock);  
+			return; 
+
+		}
+	}else{
+		pr_info("inode was super block");
+		inode->i_size = i_size;
+
+	}
+	*/
+
+
+}
+
+//can get the size of the inode
+int getattr (const struct path * path, struct kstat * kstat, u32 test, unsigned int unknown){
+
+}
+
+
+
 static const struct inode_operations simplefs_inode_ops = {
     .lookup = simplefs_lookup,
     .create = simplefs_create,
@@ -1832,8 +1886,10 @@ static const struct inode_operations simplefs_inode_ops = {
     .dfs_inode_trylock_shared = simple_dfs_inode_trylock_shared,
     .dfs_inode_is_locked = simple_dfs_inode_is_locked,
     .dfs_inode_lock_nested = simple_dfs_inode_lock_nested,
-	.inode_down_read_killable = simple_inode_down_read_killable,
-	.inode_down_write_killable = simple_inode_down_write_killable , 
+    .inode_down_read_killable = simple_inode_down_read_killable,
+    .inode_down_write_killable = simple_inode_down_write_killable, 
+    //.setattr = dfs_setattr, don't need this since setattr uses i_size_write when truncating
+    //getattr also just uses i_size_read
 
 
 };
