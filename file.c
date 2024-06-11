@@ -1550,10 +1550,12 @@ again:
 		if (mapping_writably_mapped(mapping))
 			flush_dcache_page(page);
 
-		copied = iov_iter_copy_from_user_atomic(page, i, offset, bytes);
+		//request access to the page here
 		if(temp.old_state <= READ){
 			invalidate_page_write(page, file, inode, currentpage);
 		}
+
+		copied = iov_iter_copy_from_user_atomic(page, i, offset, bytes);
 
 		flush_dcache_page(page);
 
