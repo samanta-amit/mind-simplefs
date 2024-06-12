@@ -165,7 +165,9 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
 
 	int cpu_id = get_cpu();
 
+	pr_info("lock ac 8");
         spin_lock(&dummy_page_lock);
+	pr_info("lock ac 9");
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
        	//pr_info("invalidate_page_write 3");
@@ -176,7 +178,16 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
         //BUG_ON(r);
 	if(r == REC_NACK){
 		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
+		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
+		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
+		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
+		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
+		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
+		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
+
 		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+	        spin_unlock(&dummy_page_lock);
+
         	return false;
 	}
 
@@ -228,9 +239,12 @@ static bool invalidate_size_write(int inode_ino, void *inv_argv){
         inode_pages_address = inode_size_address[inode_ino];
 	
 	int cpu_id = get_cpu();
+	pr_info("lock ac 10");
 
         spin_lock(&dummy_page_lock);
-        spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+       	pr_info("lock ac 11");
+
+       	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(get_cpu());
@@ -315,9 +329,11 @@ static bool invalidate_lock_write(int inode_ino, void *inv_argv, unsigned long l
         inode_pages_address = lock_address;
 	
 	int cpu_id = get_cpu();
-
+       	pr_info("lock ac 12");
         spin_lock(&dummy_page_lock);
-        spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+       	pr_info("lock ac 13");
+
+	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(get_cpu());
@@ -453,7 +469,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 		    pr_info("RECEIVED SIZE INVALIDATION");
 		    pr_info("RECEIVED SIZE INVALIDATION");
 		    pr_info("RECEIVED SIZE INVALIDATION");
-
+		       	pr_info("lock ac 13");
 			spin_lock(&size_lock);  
 
 			invalidate_size_write(i, inv_argv);
@@ -475,7 +491,8 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	
     if(addr == inode_lock_address){
 	    pr_info("address callback was inode lock");
-	spin_lock(&remote_inode_lock);  
+		pr_info("lock ac 14");
+	    spin_lock(&remote_inode_lock);  
 	invalidate_lock_write(0, inv_argv, inode_lock_address);
 
 	pr_info("RECEIVED INVALIDATION");
@@ -1430,6 +1447,8 @@ void lock_loop(int ino){
 		int i = 0;
 
 		//down_write(&testsem);
+		pr_info("lock ac 15");
+
 		spin_lock(&remote_inode_lock);  
 
 		pr_info("got lock, status was %d", remote_lock_status);
@@ -1583,8 +1602,11 @@ static int get_remote_size_access(int inode_ino){
         inode_pages_address = inode_size_address[inode_ino];
 
 	int cpu_id = get_cpu();
+		pr_info("lock ac 15");
 
         spin_lock(&dummy_page_lock);
+		pr_info("lock ac 16");
+
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
        	//pr_info("invalidate_page_write 3");
@@ -1646,6 +1668,8 @@ int size_loop(int ino){
 		int i = 0;
 
 		//down_write(&testsem);
+		pr_info("lock ac 16");
+
 		spin_lock(&size_lock);  
 
 		pr_info("got lock, status was %d", inode_size_status[ino]);

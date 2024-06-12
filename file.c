@@ -313,6 +313,7 @@ static int mind_fetch_page_write(
         int r;
         unsigned long start_time = jiffies;
 
+	pr_info("lock ac 1");
 	spin_lock(&dummy_page_lock);
 
         ret_buf.data_size = PAGE_SIZE;
@@ -659,9 +660,12 @@ static int simplefs_readpage(struct file *file, struct page *page)
 
 	BUG_ON(!PageUptodate(page));
 	
+	pr_info("lock ac 2");
+
 	spin_lock(&dummy_page_lock);
 	pr_err("acquiring dummy page lock");
 	int cpu = get_cpu();
+	pr_info("lock ac 3");
 	spin_lock(&cnthread_inval_send_ack_lock[cpu]);
 
 	// TODO(stutsman): Why are we bothering with per-cpu buffers if we have
@@ -734,6 +738,7 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
         inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (page));
 
 	int cpu_id = get_cpu();
+	pr_info("lock ac 4");
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         //spin_lock(&dummy_page_lock);
@@ -1378,6 +1383,8 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 	int cpu_id = get_cpu();
 
         //spin_lock(&dummy_page_lock);
+	pr_info("lock ac 5");
+
         spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         size_t data_size;
@@ -1450,6 +1457,8 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 	//spin_lock(&shmem_states_lock);
 
 	//lock page tree
+	pr_info("lock ac 6");
+
 	spin_lock_irq(&mapping->tree_lock);
 
 	//delete page from page cache
@@ -1594,6 +1603,7 @@ again:
 			pr_info("UPDATING PAGE DATA BEFORE APPEND");
 
 			//request in read mode, and copy the data over
+			pr_info("lock ac 7");
 			spin_lock(&dummy_page_lock);
 			// TODO(stutsman): Why are we bothering with per-cpu buffers if we have
 			// a single lock around all of them here. Likely we want a per-cpu
