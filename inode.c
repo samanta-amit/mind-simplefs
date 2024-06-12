@@ -60,7 +60,7 @@ extern unsigned long inode_lock_address;
 extern unsigned long inode_size_address[10];
 extern unsigned int inode_size_status[10];
 extern struct super_block * super_block;
-static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
+spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 
 
 struct rw_semaphore testsem;
@@ -74,7 +74,7 @@ int remote_size_status = 0; //0 not held, 1 read mode, 2 write mode
 
 //this is protected by the testsem
 int initialized = 0;
-static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
+//static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 struct inode *simplefs_iget(struct super_block *sb, unsigned long ino);
 int REC_NACK = -1024;
 
@@ -487,7 +487,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	remote_lock_status = 0;
     	//removed to test for deadlock
 	spin_unlock(&remote_inode_lock);  
-
+	return 1;
     }
 
     //do page sync (in file.c)
@@ -1653,12 +1653,6 @@ int size_loop(int ino){
 			return -1;
 		}else{
 			pr_info("updating size status ");
-			pr_info("updating size status ");
-			pr_info("updating size status ");
-			pr_info("updating size status ");
-			pr_info("updating size status ");
-			pr_info("updating size status ");
-			pr_info("updating size status ");
 
 			int result = get_remote_size_access(ino);
 			if(result == -1){
@@ -1685,12 +1679,9 @@ int size_loop(int ino){
 int  test_counter = 0;
 
 loff_t simple_i_size_read(const struct inode *inode){
-	pr_info("reading i_size for inode %d", inode->i_ino);
-	pr_info("reading i_size for inode %d", inode->i_ino);
-	pr_info("reading i_size for inode %d", inode->i_ino);
-	pr_info("reading i_size for inode %d", inode->i_ino);
 
 	if(inode->i_ino != 0){
+		pr_info("reading i_size for inode %d", inode->i_ino);
 		int size = size_loop(inode->i_ino);	
 		//lock acquired in size loop
 		if(size == -1){
@@ -1715,7 +1706,6 @@ loff_t simple_i_size_read(const struct inode *inode){
 
 		}
 	}else{
-		pr_info("inode was superblock");
 		return inode->i_size;
 	}
 
@@ -1746,17 +1736,9 @@ loff_t simple_i_size_read(const struct inode *inode){
 }
 
 void simple_i_size_write(struct inode *inode, loff_t i_size){
-	pr_info("writing i_size for inode %d", inode->i_ino);
-	pr_info("writing size of inode");
-	pr_info("writing size of inode");
-	pr_info("writing size of inode");
-	pr_info("writing size of inode");
-	pr_info("writing size of inode");
-	pr_info("writing size of inode");
-	pr_info("writing size of inode");
-	pr_info("writing size of inode");
 
 	if(inode->i_ino != 0){
+	pr_info("writing i_size for inode %d", inode->i_ino);
 		int size = size_loop(inode->i_ino);	
 		//lock acquired in size loop
 		if(size == -1){
@@ -1774,7 +1756,6 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 
 		}
 	}else{
-		pr_info("inode was super block");
 		inode->i_size = i_size;
 
 	}
@@ -1816,13 +1797,6 @@ int simple_inode_down_write_killable(struct inode * inode){
 
 //can set the size of the inode
 int dfs_setattr (struct dentry * dentry, struct iattr * iattr){
-
-	pr_info("setting attribute");
-	//check to see if this is a size set
-	if(iattr->ia_mode == ATTR_SIZE){
-		pr_info("setting size attribute");
-
-	}
 
 	return simple_setattr(dentry, iattr);
 

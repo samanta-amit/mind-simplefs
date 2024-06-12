@@ -49,7 +49,7 @@ DEFINE_SPINLOCK(dummy_page_lock);
 #define READ 1
 #define WRITE 2
 
-static spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
+extern spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 
 
 struct shmem_coherence_state {
