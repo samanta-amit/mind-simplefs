@@ -1542,6 +1542,13 @@ again:
 
 		//need to copy in the most up to date version of the page
 
+
+
+
+		status = a_ops->write_begin(file, mapping, pos, bytes, flags,
+						&page, &fsdata);
+
+
 		spin_lock(&dummy_page_lock);
 		// TODO(stutsman): Why are we bothering with per-cpu buffers if we have
 		// a single lock around all of them here. Likely we want a per-cpu
@@ -1565,11 +1572,6 @@ again:
 		}else{
 			up_read(&(temp.state->rwsem));
 		}
-
-
-
-		status = a_ops->write_begin(file, mapping, pos, bytes, flags,
-						&page, &fsdata);
 
 		if (unlikely(status < 0))
 
