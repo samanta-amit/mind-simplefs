@@ -802,9 +802,15 @@ struct page *test_grab_cache_page_write_begin(struct address_space *mapping,
 		wait_for_stable_page(page);
 
 	//this is bad but I think it could show where the problem is
-	unlock_page(page);
-	lock_page(page);
-
+	//unlock_page(page);
+	//lock_page(page);
+	if (PageLocked(page)){
+		pr_err("PAGE WAS ALREADY LOCKED");
+		pr_err("PAGE WAS ALREADY LOCKED");
+		pr_err("PAGE WAS ALREADY LOCKED");
+		pr_err("PAGE WAS ALREADY LOCKED");
+		pr_err("PAGE WAS ALREADY LOCKED");
+	}
 	return page;
 }
 
