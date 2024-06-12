@@ -783,6 +783,31 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
         return true;
 }
 
+int test_block_write_begin(struct address_space *mapping, loff_t pos, unsigned len,
+		unsigned flags, struct page **pagep, get_block_t *get_block)
+{
+	pgoff_t index = pos >> PAGE_SHIFT;
+	struct page *page;
+	int status;
+	pr_info("before grabbing page from page cache");
+	page = grab_cache_page_write_begin(mapping, index, flags);
+	pr_info("after grabbing page from page cache");
+	if (!page)
+		return -ENOMEM;
+
+	pr_info("before block_write_begin");
+	status = __block_write_begin(page, pos, len, get_block);
+	pr_info("after block_write_begin");
+	if (unlikely(status)) {
+		unlock_page(page);
+		put_page(page);
+		page = NULL;
+	}
+
+	*pagep = page;
+	return status;
+}
+
 /*
  * Called by the VFS when a write() syscall occurs on file before writing the
  * data in the page cache. This functions checks if the write will be able to
@@ -844,7 +869,7 @@ static int simplefs_write_begin(struct file *file,
 
     pr_info("before block_write_begin");
     /* prepare the write */
-    err = block_write_begin(mapping, pos, len, flags, pagep,
+    err = test_block_write_begin(mapping, pos, len, flags, pagep,
                             simplefs_file_get_block);
     pr_info("after block_write_begin");
     /* if this failed, reclaim newly allocated blocks */
