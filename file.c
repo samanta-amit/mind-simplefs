@@ -801,7 +801,7 @@ static int simplefs_write_begin(struct file *file,
 
 	    unsigned int currentpage = pos / PAGE_SIZE;
 	    unsigned int lastpage = (pos + len) / PAGE_SIZE;
-    //pr_info("write begin page number %d end page number %d, for inode %ld write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
+    pr_info("write begin page number %d end page number %d, for inode %ld write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
 
 
     struct inode *inode = file->f_inode;
@@ -813,8 +813,11 @@ static int simplefs_write_begin(struct file *file,
     //need to do the currentpage thing and not pass in the 
     //actual page since it causes null dereference stuff
     //
-    
+   
+	pr_info("before SIMPLEFS_SB");
     struct simplefs_sb_info *sbi = SIMPLEFS_SB(file->f_inode->i_sb);
+	pr_info("after SIMPLEFS_SB");
+
     int err;
     uint32_t nr_allocs = 0;
 
@@ -838,9 +841,12 @@ static int simplefs_write_begin(struct file *file,
 	    invalidate_page_write(file, inode, page);
     }*/
 
+
+    pr_info("before block_write_begin");
     /* prepare the write */
     err = block_write_begin(mapping, pos, len, flags, pagep,
                             simplefs_file_get_block);
+    pr_info("after block_write_begin");
     /* if this failed, reclaim newly allocated blocks */
     if (err < 0)
         pr_err("newly allocated blocks reclaim not implemented yet\n");
