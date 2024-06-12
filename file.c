@@ -614,10 +614,17 @@ do {
 static int simplefs_readpage(struct file *file, struct page *page)
 {
 
+	pr_info("CALLING READPAGE");
+	pr_info("CALLING READPAGE");
+	pr_info("CALLING READPAGE");
+	pr_info("CALLING READPAGE");
+	pr_info("CALLING READPAGE");
+	pr_info("CALLING READPAGE");
+
 	struct buffer_head bh;
 	uintptr_t inode_pages_address;
 	int r;
-
+	int i;
 	const struct address_space *mapping = file->f_mapping;
 
 
@@ -645,23 +652,42 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	// 0 below is the index of this block in the page; always 0 here
 	// since this file system always has block size == page size.
 	map_buffer_to_page(page, &bh, 0);
-	SetPageUptodate(page);
-	BUG_ON(!PageUptodate(page));
+	pr_err("map buffer to page");
 
+	SetPageUptodate(page);
+	pr_err("set page up to date %d", PageUptodate(page));
+
+	BUG_ON(!PageUptodate(page));
+	
 	spin_lock(&dummy_page_lock);
+	pr_err("acquiring dummy page lock");
+	int cpu = get_cpu();
+	spin_lock(&cnthread_inval_send_ack_lock[cpu]);
+
 	// TODO(stutsman): Why are we bothering with per-cpu buffers if we have
 	// a single lock around all of them here. Likely we want a per-cpu
 	// spinlock.
 	size_t data_size;
-	void *buf = get_dummy_page_dma_addr(get_cpu());
+	//void *buf = get_dummy_page_dma_addr(get_cpu());
+	void *buf = get_dummy_page_dma_addr(cpu);
+
+	pr_err("got dummy buf addr %d", buf);
+
 	r = mind_fetch_page(inode_pages_address, buf, &data_size);
+	pr_err("fetched page");
+
         BUG_ON(r);
-	simplefs_kernel_page_write(page, get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, 0);
+
 	
+	simplefs_kernel_page_write(page, get_dummy_page_buf_addr(cpu), PAGE_SIZE, 0);
+	//simplefs_kernel_page_write(page, buf, PAGE_SIZE, 0);
+
+	pr_err("wrote page");
+
 	//adds page to hashmap if not already in hashmap
 	//update_coherence(mapping->host, page->index, mapping, READ);
 
-
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu]);
 	spin_unlock(&dummy_page_lock);
 	unlock_page(page);
 
