@@ -1548,31 +1548,6 @@ again:
 		status = a_ops->write_begin(file, mapping, pos, bytes, flags,
 						&page, &fsdata);
 
-
-		spin_lock(&dummy_page_lock);
-		// TODO(stutsman): Why are we bothering with per-cpu buffers if we have
-		// a single lock around all of them here. Likely we want a per-cpu
-		// spinlock.
-		size_t data_size;
-		void *buf = get_dummy_page_dma_addr(get_cpu());
-		int r = mind_fetch_page(inode_pages_address, buf, &data_size);
-		BUG_ON(r);
-		simplefs_kernel_page_write(page, get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, 0);
-
-		//adds page to hashmap if not already in hashmap
-		//update_coherence(mapping->host, page->index, mapping, READ);
-
-
-		spin_unlock(&dummy_page_lock);
-		unlock_page(page);
-
-		//unlock page pointer
-		if(temp.page_lock){
-			up_write(&(temp.state->rwsem));
-		}else{
-			up_read(&(temp.state->rwsem));
-		}
-
 		if (unlikely(status < 0))
 
 			break;
