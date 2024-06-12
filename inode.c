@@ -173,7 +173,7 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
        	//pr_info("invalidate_page_write 3");
 
         size_t data_size;
-        void *buf = get_dummy_page_dma_addr(get_cpu());
+        void *buf = get_dummy_page_dma_addr(cpu_id);
         r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         //BUG_ON(r);
 	if(r == REC_NACK){
@@ -191,9 +191,9 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
         	return false;
 	}
 
-        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
 
-        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+        ptrdummy = get_dummy_page_buf_addr(cpu_id);
 	//pr_info("invalidate_page_write 4");
 
         //writes data to that page
@@ -247,13 +247,13 @@ static bool invalidate_size_write(int inode_ino, void *inv_argv){
        	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         size_t data_size;
-        void *buf = get_dummy_page_dma_addr(get_cpu());
+        void *buf = get_dummy_page_dma_addr(cpu_id);
         //r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         //BUG_ON(r);
 
-        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
 
-        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+        ptrdummy = get_dummy_page_buf_addr(cpu_id);
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
@@ -266,7 +266,7 @@ static bool invalidate_size_write(int inode_ino, void *inv_argv){
 	//already have inode size lock held so it should be synced 
 	//naked reads only occur in writes, so there wouldn't be stale reads
 	//since we don't have concurrent writes
-	((int *)get_dummy_page_buf_addr(get_cpu()))[0] = inode->i_size;//NEED to have inode lock for this 
+	((int *)get_dummy_page_buf_addr(cpu_id))[0] = inode->i_size;//NEED to have inode lock for this 
 	pr_info("INVALIDATED SIZE WAS %d", inode->i_size);
 	//can't use i_size_read since it will be an infinite loop
 
@@ -336,13 +336,13 @@ static bool invalidate_lock_write(int inode_ino, void *inv_argv, unsigned long l
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         size_t data_size;
-        void *buf = get_dummy_page_dma_addr(get_cpu());
+        void *buf = get_dummy_page_dma_addr(cpu_id);
         //r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         //BUG_ON(r);
 
-        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
 
-        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+        ptrdummy = get_dummy_page_buf_addr(cpu_id);
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
@@ -1612,7 +1612,7 @@ static int get_remote_size_access(int inode_ino){
        	//pr_info("invalidate_page_write 3");
 
         size_t data_size;
-        void *buf = get_dummy_page_dma_addr(get_cpu());
+        void *buf = get_dummy_page_dma_addr(cpu_id);
         r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         //BUG_ON(r);
 	if(r == REC_NACK){
@@ -1621,13 +1621,13 @@ static int get_remote_size_access(int inode_ino){
         	return -1;
 	}
 
-        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
 
-        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+        ptrdummy = get_dummy_page_buf_addr(cpu_id);
 
 
 
-       	int result = ((int *)get_dummy_page_buf_addr(get_cpu()))[0];
+       	int result = ((int *)get_dummy_page_buf_addr(cpu_id))[0];
 
 	//pr_info("invalidate_page_write 4");
 
@@ -1823,6 +1823,7 @@ int simple_inode_down_write_killable(struct inode * inode){
 //can set the size of the inode
 int dfs_setattr (struct dentry * dentry, struct iattr * iattr){
 
+	pr_info("set attr being called");
 	return simple_setattr(dentry, iattr);
 
 	/*
@@ -1887,7 +1888,7 @@ static const struct inode_operations simplefs_inode_ops = {
     .dfs_inode_lock_nested = simple_dfs_inode_lock_nested,
     .inode_down_read_killable = simple_inode_down_read_killable,
     .inode_down_write_killable = simple_inode_down_write_killable, 
-    //.setattr = dfs_setattr, don't need this since setattr uses i_size_write when truncating
+    .setattr = dfs_setattr, //don't need this since setattr uses i_size_write when truncating
     //getattr also just uses i_size_read
 
 

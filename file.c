@@ -745,18 +745,18 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
        	//pr_info("invalidate_page_write 3");
 
         size_t data_size;
-        void *buf = get_dummy_page_dma_addr(get_cpu());
+        void *buf = get_dummy_page_dma_addr(cpu_id);
         r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         BUG_ON(r);
 
-        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
 
-        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+        ptrdummy = get_dummy_page_buf_addr(cpu_id);
 	//pr_info("invalidate_page_write 4");
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
-        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), PAGE_SIZE, &test);
         
 	//int i;
         //for(i = 0; i < 20; i++){
@@ -1388,17 +1388,17 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         size_t data_size;
-        void *buf = get_dummy_page_dma_addr(get_cpu());
+        void *buf = get_dummy_page_dma_addr(cpu_id);
         //r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         //BUG_ON(r);
 
-        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(get_cpu()), &ptl_ptr);
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
 
-        ptrdummy = get_dummy_page_buf_addr(get_cpu());
+        ptrdummy = get_dummy_page_buf_addr(cpu_id);
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
-        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
+        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), PAGE_SIZE, &test);
 
         //for(i = 0; i < 20; i++){
         //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
@@ -1609,10 +1609,11 @@ again:
 			// a single lock around all of them here. Likely we want a per-cpu
 			// spinlock.
 			size_t data_size;
-			void *buf = get_dummy_page_dma_addr(get_cpu());
+			int cpu_id = get_cpu();
+			void *buf = get_dummy_page_dma_addr(cpu_id);
 			int r = mind_fetch_page(inode_pages_address, buf, &data_size);
 			BUG_ON(r);
-			simplefs_kernel_page_write(page, get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, 0);
+			simplefs_kernel_page_write(page, get_dummy_page_buf_addr(cpu_id), PAGE_SIZE, 0);
 
 			//adds page to hashmap if not already in hashmap
 			//update_coherence(mapping->host, page->index, mapping, READ);
