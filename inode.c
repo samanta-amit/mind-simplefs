@@ -286,24 +286,24 @@ static bool invalidate_size_write(int inode_ino, void *inv_argv){
         create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
         *((u32 *)(&(inv_ctx->inval_buf[CACHELINE_ROCE_VOFFSET_TO_IP]))) = rdma_ctx->ip_val;
 
-	//pr_info("inv_ctx->original_qp %d", inv_ctx->original_qp);
+	pr_info("inv_ctx->original_qp %d", inv_ctx->original_qp);
 	
 	u32 req_qp = (get_id_from_requester(inv_ctx->rdma_ctx.requester) * DISAGG_QP_PER_COMPUTE) + inv_ctx->original_qp;
-        //pr_info("req_qp %d", req_qp);
+        pr_info("req_qp %d", req_qp);
 	
-	//pr_info("before cn_copy_page");
+	pr_info("before cn_copy_page");
 	cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
         temppte, CN_TARGET_PAGE, req_qp, buf);
-        //pr_info("after cn_copy_page");
+        pr_info("after cn_copy_page");
 	
-	//pr_info("before inval ack");
-	//pr_info("inv_ctx->inval_buf %d", inv_ctx->inval_buf);
+	pr_info("before inval ack");
+	pr_info("inv_ctx->inval_buf %d", inv_ctx->inval_buf);
         _cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
-        //pr_info("after inval ack");
+        pr_info("after inval ack");
         
-	//pr_info("before FinACK");
+	pr_info("before FinACK");
         cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
-        //pr_info("after FinACK");
+        pr_info("after FinACK");
 	
 	//spin_unlock(ptl_ptr);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
