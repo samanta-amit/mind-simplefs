@@ -65,7 +65,8 @@ spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 
 struct rw_semaphore testsem;
 struct rw_semaphore testlock;
-DEFINE_SPINLOCK(inode_dummy_page_lock);
+//DEFINE_SPINLOCK(inode_dummy_page_lock);
+extern spinlock_t dummy_page_lock; 
 DEFINE_SPINLOCK(remote_inode_lock);
 
 int remote_lock_status = 0; //0 not held, 1 read mode, 2 write mode
@@ -86,7 +87,7 @@ static int mind_fetch_page_write(
         int r;
         unsigned long start_time = jiffies;
 
-	spin_lock(&inode_dummy_page_lock);
+	spin_lock(&dummy_page_lock);
 
         ret_buf.data_size = PAGE_SIZE;
         ret_buf.data = page_dma_address;
@@ -97,7 +98,7 @@ static int mind_fetch_page_write(
         wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
         BUG_ON(!wait_node);
 	
-	spin_unlock(&inode_dummy_page_lock);
+	spin_unlock(&dummy_page_lock);
 
         //mind_pr_cache_dir_state(
         //        "BEFORFE PFAULT ACK/NACK",
@@ -163,7 +164,7 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
 	int cpu_id = get_cpu();
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
-        //spin_lock(&dummy_page_lock);
+        spin_lock(&dummy_page_lock);
        	//pr_info("invalidate_page_write 3");
 
         size_t data_size;
@@ -201,7 +202,7 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
         //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
         // spin_unlock(ptl_ptr);
-        //spin_unlock(&dummy_page_lock);
+        spin_unlock(&dummy_page_lock);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         //spin_unlock_irq(&mapping->tree_lock);
@@ -226,7 +227,7 @@ static bool invalidate_size_write(int inode_ino, void *inv_argv){
 	
 	int cpu_id = get_cpu();
 
-        //spin_lock(&dummy_page_lock);
+        spin_lock(&dummy_page_lock);
         spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         size_t data_size;
@@ -289,7 +290,7 @@ static bool invalidate_size_write(int inode_ino, void *inv_argv){
         //pr_info("after FinACK");
 	
 	//spin_unlock(ptl_ptr);
-	//spin_unlock(&dummy_page_lock);
+	spin_unlock(&dummy_page_lock);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 
 	//spin_unlock_irq(&mapping->tree_lock);
@@ -314,7 +315,7 @@ static bool invalidate_lock_write(int inode_ino, void *inv_argv, unsigned long l
 	
 	int cpu_id = get_cpu();
 
-        //spin_lock(&dummy_page_lock);
+        spin_lock(&dummy_page_lock);
         spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         size_t data_size;
@@ -369,7 +370,7 @@ static bool invalidate_lock_write(int inode_ino, void *inv_argv, unsigned long l
         //pr_info("after FinACK");
 	
 	//spin_unlock(ptl_ptr);
-	//spin_unlock(&dummy_page_lock);
+	spin_unlock(&dummy_page_lock);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 
 	//spin_unlock_irq(&mapping->tree_lock);
@@ -1584,7 +1585,7 @@ static int get_remote_size_access(int inode_ino){
 	int cpu_id = get_cpu();
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
-        //spin_lock(&dummy_page_lock);
+        spin_lock(&dummy_page_lock);
        	//pr_info("invalidate_page_write 3");
 
         size_t data_size;
@@ -1627,7 +1628,7 @@ static int get_remote_size_access(int inode_ino){
         //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
         // spin_unlock(ptl_ptr);
-        //spin_unlock(&dummy_page_lock);
+        spin_unlock(&dummy_page_lock);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         //spin_unlock_irq(&mapping->tree_lock);
@@ -1687,7 +1688,7 @@ loff_t simple_i_size_read(const struct inode *inode){
 		if(size == -1){
 			//this means that we already have access
 			loff_t temp = inode->i_size;
-			pr_info("already had size access");
+			pr_info("already had size access size was %d", temp);
 			spin_unlock(&size_lock);  
 
 			return temp; 
@@ -1744,7 +1745,6 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 		if(size == -1){
 			//this means that we already have access
 			pr_info("already had size access");
-
 			inode->i_size = i_size;
 			spin_unlock(&size_lock);  
 			return; 
@@ -1755,6 +1755,7 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 			return; 
 
 		}
+		pr_info("updated size to %d", i_size);
 	}else{
 		inode->i_size = i_size;
 
