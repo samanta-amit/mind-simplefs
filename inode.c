@@ -87,7 +87,9 @@ static int mind_fetch_page_write(
         int r;
         unsigned long start_time = jiffies;
 
-	spin_lock(&dummy_page_lock);
+
+	//this might cause double lock acquiring
+	//spin_lock(&dummy_page_lock);
 
         ret_buf.data_size = PAGE_SIZE;
         ret_buf.data = page_dma_address;
@@ -98,7 +100,7 @@ static int mind_fetch_page_write(
         wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
         BUG_ON(!wait_node);
 	
-	spin_unlock(&dummy_page_lock);
+	//spin_unlock(&dummy_page_lock);
 
         //mind_pr_cache_dir_state(
         //        "BEFORFE PFAULT ACK/NACK",
@@ -162,9 +164,10 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
         inode_pages_address = lock_address;
 
 	int cpu_id = get_cpu();
-	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         spin_lock(&dummy_page_lock);
+	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
        	//pr_info("invalidate_page_write 3");
 
         size_t data_size;
@@ -202,9 +205,8 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
         //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
         // spin_unlock(ptl_ptr);
-        spin_unlock(&dummy_page_lock);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-
+        spin_unlock(&dummy_page_lock);
         //spin_unlock_irq(&mapping->tree_lock);
 
         return true;
@@ -290,9 +292,8 @@ static bool invalidate_size_write(int inode_ino, void *inv_argv){
         //pr_info("after FinACK");
 	
 	//spin_unlock(ptl_ptr);
-	spin_unlock(&dummy_page_lock);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-
+	spin_unlock(&dummy_page_lock);
 	//spin_unlock_irq(&mapping->tree_lock);
 	return true;
 }
@@ -331,8 +332,8 @@ static bool invalidate_lock_write(int inode_ino, void *inv_argv, unsigned long l
         //copy data into dummy buffer, and send to switch
         //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
 
-	((char*)get_dummy_page_buf_addr(get_cpu()))[0] = 'h';
-	((char*)get_dummy_page_buf_addr(get_cpu()))[1] = 'i';
+	//((char*)get_dummy_page_buf_addr(get_cpu()))[0] = 'h'; //this could be causing issues
+	//((char*)get_dummy_page_buf_addr(get_cpu()))[1] = 'i';
 
         //for(i = 0; i < 20; i++){
         //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
@@ -370,9 +371,8 @@ static bool invalidate_lock_write(int inode_ino, void *inv_argv, unsigned long l
         //pr_info("after FinACK");
 	
 	//spin_unlock(ptl_ptr);
-	spin_unlock(&dummy_page_lock);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-
+	spin_unlock(&dummy_page_lock);
 	//spin_unlock_irq(&mapping->tree_lock);
 	return true;
 }
@@ -1583,9 +1583,10 @@ static int get_remote_size_access(int inode_ino){
         inode_pages_address = inode_size_address[inode_ino];
 
 	int cpu_id = get_cpu();
-	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         spin_lock(&dummy_page_lock);
+	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
        	//pr_info("invalidate_page_write 3");
 
         size_t data_size;
@@ -1628,9 +1629,8 @@ static int get_remote_size_access(int inode_ino){
         //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
         // spin_unlock(ptl_ptr);
-        spin_unlock(&dummy_page_lock);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-
+        spin_unlock(&dummy_page_lock);
         //spin_unlock_irq(&mapping->tree_lock);
 
         return result;
