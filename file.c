@@ -783,6 +783,31 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
         return true;
 }
 
+struct page *test_grab_cache_page_write_begin(struct address_space *mapping,
+					pgoff_t index, unsigned flags)
+{
+	struct page *page;
+	int fgp_flags = FGP_WRITE|FGP_CREAT;
+//FGP_LOCK|FGP_WRITE|FGP_CREAT;
+//removed lock requirement
+
+	if (flags & AOP_FLAG_NOFS)
+		fgp_flags |= FGP_NOFS;
+
+	page = pagecache_get_page(mapping, index, fgp_flags,
+			mapping_gfp_mask(mapping));
+
+
+	if (page)
+		wait_for_stable_page(page);
+
+	//this is bad but I think it could show where the problem is
+	unlock_page(page);
+	lock_page(page);
+
+	return page;
+}
+
 int test_block_write_begin(struct address_space *mapping, loff_t pos, unsigned len,
 		unsigned flags, struct page **pagep, get_block_t *get_block)
 {
@@ -790,7 +815,7 @@ int test_block_write_begin(struct address_space *mapping, loff_t pos, unsigned l
 	struct page *page;
 	int status;
 	pr_info("before grabbing page from page cache");
-	page = grab_cache_page_write_begin(mapping, index, flags);
+	page = test_grab_cache_page_write_begin(mapping, index, flags);
 	pr_info("after grabbing page from page cache");
 	if (!page)
 		return -ENOMEM;
