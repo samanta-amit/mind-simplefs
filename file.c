@@ -811,7 +811,7 @@ struct page *test_grab_cache_page_write_begin(struct address_space *mapping,
 		pr_err("PAGE WAS ALREADY LOCKED");
 		pr_err("PAGE WAS ALREADY LOCKED");
 	}else{
-		lock_page(page);
+		lock_page(page); //this appears to address the issue
 	}
 	return page;
 }
