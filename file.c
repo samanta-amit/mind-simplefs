@@ -807,6 +807,32 @@ static int simplefs_write_begin(struct file *file,
     /* prepare the write */
     err = block_write_begin(mapping, pos, len, flags, pagep,
                             simplefs_file_get_block);
+
+    //!!!!only do this if we don't have access to the page locally
+    uintptr_t inode_pages_address;
+
+    //below was added to handle appends and stuff
+    inode_pages_address = shmem_address[mapping->host->i_ino] +
+	    (PAGE_SIZE * (currentpage));
+    int r;
+
+    spin_lock(&dummy_page_lock);
+    // TODO(stutsman): Why are we bothering with per-cpu buffers if we have
+    // a single lock around all of them here. Likely we want a per-cpu
+    // spinlock.
+    size_t data_size;
+    void *buf = get_dummy_page_dma_addr(get_cpu());
+    r = mind_fetch_page(inode_pages_address, buf, &data_size);
+    BUG_ON(r);
+    simplefs_kernel_page_write(*pagep, get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, 0);
+
+    //adds page to hashmap if not already in hashmap
+    update_coherence(mapping->host, currentpage, mapping, READ);
+
+
+    spin_unlock(&dummy_page_lock);
+
+
     /* if this failed, reclaim newly allocated blocks */
     if (err < 0)
         pr_err("newly allocated blocks reclaim not implemented yet\n");
