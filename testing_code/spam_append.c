@@ -14,7 +14,7 @@ int main(){
 	testbuf[1] = 'a';
 	testbuf[2] = 'a';
 	testbuf[3] = 'a';  //open with append mode
-	int fd = open("test_read_file", O_APPEND | O_WRONLY, 0);
+	int fd = open("testfile", O_APPEND | O_WRONLY, 0);
 	if(fd){
 		printf("file descriptor was %d\n", fd);
 	}else{
