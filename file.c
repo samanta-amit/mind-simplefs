@@ -1551,9 +1551,43 @@ again:
 			flush_dcache_page(page);
 
 		//request access to the page here
-		if(temp.old_state <= READ){
+		if(temp.old_state < READ){
+			pr_info("UPDATING PAGE DATA BEFORE APPEND");
+			pr_info("UPDATING PAGE DATA BEFORE APPEND");
+			pr_info("UPDATING PAGE DATA BEFORE APPEND");
+			pr_info("UPDATING PAGE DATA BEFORE APPEND");
+			pr_info("UPDATING PAGE DATA BEFORE APPEND");
+			pr_info("UPDATING PAGE DATA BEFORE APPEND");
+			pr_info("UPDATING PAGE DATA BEFORE APPEND");
+			pr_info("UPDATING PAGE DATA BEFORE APPEND");
+			pr_info("UPDATING PAGE DATA BEFORE APPEND");
+
+			//request in read mode, and copy the data over
+			spin_lock(&dummy_page_lock);
+			// TODO(stutsman): Why are we bothering with per-cpu buffers if we have
+			// a single lock around all of them here. Likely we want a per-cpu
+			// spinlock.
+			size_t data_size;
+			void *buf = get_dummy_page_dma_addr(get_cpu());
+			int r = mind_fetch_page(inode_pages_address, buf, &data_size);
+			BUG_ON(r);
+			simplefs_kernel_page_write(page, get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, 0);
+
+			//adds page to hashmap if not already in hashmap
+			//update_coherence(mapping->host, page->index, mapping, READ);
+
+
+			spin_unlock(&dummy_page_lock);
+			unlock_page(page);
+
+
+		}
+		if (temp.old_state < WRITE){
 			invalidate_page_write(page, file, inode, currentpage);
 		}
+
+
+
 
 		copied = iov_iter_copy_from_user_atomic(page, i, offset, bytes);
 
