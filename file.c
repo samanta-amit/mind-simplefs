@@ -713,6 +713,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
  */
 static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 {
+	pr_info("simplefs_writepage");
     return block_write_full_page(page, simplefs_file_get_block, wbc);
 }
 
@@ -1583,12 +1584,18 @@ again:
 		status = a_ops->write_begin(file, mapping, pos, bytes, flags,
 						&page, &fsdata);
 
-		if (unlikely(status < 0))
+		if (unlikely(status < 0)){
+			pr_err("status was less than zero");
 
 			break;
+		}
 
-		if (mapping_writably_mapped(mapping))
+		if (mapping_writably_mapped(mapping)){
+			pr_err("writably mapped?");
 			flush_dcache_page(page);
+
+		}
+		pr_err("done with potential issues");
 
 		//request access to the page here
 		if(temp.old_state < READ){
