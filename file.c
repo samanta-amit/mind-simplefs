@@ -1058,7 +1058,8 @@ page_ok:
                  * another truncate extends the file - this is desired though).
                  */
 
-                isize = i_size_read(inode);
+               	pr_info("page ok i_size_read"); 
+		isize = i_size_read(inode);
                 end_index = (isize - 1) >> PAGE_SHIFT;
                 if (unlikely(!isize || index > end_index)) {
                         //pr_info("size difference\n");
@@ -1217,6 +1218,7 @@ simplefs_generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
                 struct inode *inode = mapping->host;
                 loff_t size;
 
+		pr_info("file read iter direct i_size_read");
                 size = i_size_read(inode);
                 if (iocb->ki_flags & IOCB_NOWAIT) {
                         if (filemap_range_has_page(mapping, iocb->ki_pos,
@@ -1762,6 +1764,7 @@ ssize_t simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *fr
 	ssize_t ret;
 
 	inode_lock(inode);
+	pr_info("write iter i_size_read");
 	i_size_read(inode); 
 
 	ret = generic_write_checks(iocb, from);

@@ -1668,7 +1668,7 @@ int size_loop(int ino){
 		int i = 0;
 
 		//down_write(&testsem);
-		pr_info("lock ac 16");
+		pr_info("lock ac 17");
 
 		spin_lock(&size_lock);  
 
