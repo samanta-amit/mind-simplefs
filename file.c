@@ -1058,7 +1058,7 @@ find_page:
 
 
                 if (!page) {
-                        //pr_info("no page found from findgetpage\n");
+                        pr_info("no page found from findgetpage\n");
                         if (iocb->ki_flags & IOCB_NOWAIT)
                                 goto would_block;
                         page_cache_sync_readahead(mapping,
@@ -1068,16 +1068,16 @@ find_page:
                         if (unlikely(page == NULL))
                                 goto no_cached_page;
                 }
-                //pr_info("page found is %d\n", page);
+                pr_info("page found is %d\n", page);
                 if (PageReadahead(page)) {
+                        pr_info("sync readahead\n");
                         page_cache_async_readahead(mapping,
                                         ra, filp, page,
                                         index, last_index - index);
-                        //pr_info("sync readahead\n");
 
                 }
                 if (!PageUptodate(page)) {
-                        //pr_info("page not up to date\n");
+                        pr_info("page not up to date\n");
                         if (iocb->ki_flags & IOCB_NOWAIT) {
                                 put_page(page);
                                 goto would_block;
@@ -1226,18 +1226,18 @@ readpage:
                 ClearPageError(page);
                 /* Start the actual read. The read will unlock the page. */
                 error = mapping->a_ops->readpage(filp, page);
-                //pr_info("after readpage called \n");
-                //pr_info("going to page_ok\n");
+                pr_info("after readpage called \n");
+                pr_info("going to page_ok\n");
                 goto page_ok;
 
 readpage_error:
-                //pr_info("read page error \n");
+                pr_info("read page error \n");
                 /* UHHUH! A synchronous read error occurred. Report it */
                 put_page(page);
                 goto out;
 
 no_cached_page:
-                //pr_info("no cached page \n");
+                pr_info("no cached page \n");
                 /*
                  * Ok, it wasn't cached, so we need to create a new
                  * page..
@@ -1261,7 +1261,7 @@ no_cached_page:
         }
 
 would_block:
-        //pr_info("would_block\n");
+        pr_info("would_block\n");
         error = -EAGAIN;
 out:
         ra->prev_pos = prev_index;
@@ -1270,7 +1270,7 @@ out:
 
         *ppos = ((loff_t)index << PAGE_SHIFT) + offset;
         file_accessed(filp);
-        //pr_info("leaving generic_file_buffered_read\n");
+        pr_info("leaving generic_file_buffered_read\n");
         return written ? written : error;
 }
 
