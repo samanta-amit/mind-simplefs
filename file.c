@@ -1051,7 +1051,7 @@ static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
 
                 cond_resched();
 find_page:
-                //pr_info("find page\n");
+                pr_info("find page\n");
 
                 page = find_get_page(mapping, index);
                 //ClearPageUptodate(page);
@@ -1109,10 +1109,18 @@ find_page:
                                                         offset, iter->count))
                                 goto page_not_up_to_date_locked;
                         unlock_page(page);
-                }
+                }else if (PageLocked(page)){
+			pr_info("PAGE UP TO DATE BUT STILL LOCKED");
+			pr_info("PAGE UP TO DATE BUT STILL LOCKED");
+			pr_info("PAGE UP TO DATE BUT STILL LOCKED");
+			pr_info("PAGE UP TO DATE BUT STILL LOCKED");
+			pr_info("PAGE UP TO DATE BUT STILL LOCKED");
+			pr_info("PAGE UP TO DATE BUT STILL LOCKED");
+
+		}
                 //pr_info("page was marked up to date\n");
 page_ok:
-                //pr_info("page_ok \n");
+                pr_info("page_ok \n");
                 /*
                  * i_size must be checked after we know the page is Uptodate.
                  *
@@ -1188,14 +1196,14 @@ page_ok:
                 continue;
 
 page_not_up_to_date:
-                //pr_info("page not up to date\n");
+                pr_info("page not up to date\n");
                 /* Get exclusive access to the page ... */
                 error = lock_page_killable(page);
                 if (unlikely(error))
                         goto readpage_error;
 
 page_not_up_to_date_locked:
-                //pr_info("page not up to date locked\n");
+                pr_info("page not up to date locked\n");
                 /* Did it get truncated before we got the lock? */
                 if (!page->mapping) {
                         unlock_page(page);

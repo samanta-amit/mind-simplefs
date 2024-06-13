@@ -1826,11 +1826,12 @@ int dfs_setattr (struct dentry * dentry, struct iattr * iattr){
 	pr_info("set attr being called");
 	struct inode * inode = d_inode(dentry);
 	//taken from simple_setattr this is to avoid truncate set size
+	//that can go into the page writeback stuff which we 
+	//haven't fully implemented
 	if (iattr->ia_valid & ATTR_SIZE){
 		pr_info("setting size in setattr");
 		i_size_write(inode, iattr->ia_size);
 		pr_info("done setting size in setattr");
-
 		return 0;
 	}
 
