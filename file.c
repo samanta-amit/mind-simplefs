@@ -1550,6 +1550,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		//perform page invalidation stuff here
 		shmem_invalidate_page_write(coherence_state->mapping, testp, inv_argv);
 		ClearPageUptodate(testp);
+		delete_from_page_cache(testp);
 		coherence_state->state = 0;
 		unlock_page(pagep);
 	}else{
