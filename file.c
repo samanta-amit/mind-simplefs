@@ -1534,30 +1534,31 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 	//lock page tree
 	pr_info("lock ac 6");
 
-	spin_lock_irq(&mapping->tree_lock);
+	//spin_lock_irq(&mapping->tree_lock);
 
 	//delete page from page cache
 	//trying to mess with stuff from the page tree
 	//this is stolen from find_get_entry in filemap.c
 	//spin locks stolen from fs/nilfs2/page.c 
-	pagep = radix_tree_lookup(&mapping->page_tree, coherence_state->pagenum);
-	lock_page(pagep);
+	pagep = find_get_page(mapping, coherence_state->pagenum);
+		
+		//radix_tree_lookup(&mapping->page_tree, coherence_state->pagenum);
 	if(pagep){
-
+		lock_page(pagep);
 		struct page * testp = pagep;
 		
 		//perform page invalidation stuff here
 		shmem_invalidate_page_write(coherence_state->mapping, testp, inv_argv);
 		ClearPageUptodate(testp);
 		coherence_state->state = 0;
+		unlock_page(pagep);
 	}else{
 		pr_info("ERROR page no longer in page cache");
 	}
-	unlock_page(pagep);
 	//delete page from the hashmap
 	//hash_del(&(coherence_state->link));
 
-	spin_unlock_irq(&mapping->tree_lock);
+	//spin_unlock_irq(&mapping->tree_lock);
         //spin_unlock(&shmem_states_lock);
 	return true;
 
