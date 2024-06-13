@@ -714,7 +714,11 @@ static int simplefs_readpage(struct file *file, struct page *page)
 static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 {
 	pr_info("simplefs_writepage");
-    return block_write_full_page(page, simplefs_file_get_block, wbc);
+    //return block_write_full_page(page, simplefs_file_get_block, wbc);
+
+	//hack to try and prevent problems with page writeback	
+	unlock_page(page);
+	return 0; 
 }
 
 
@@ -1549,8 +1553,8 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		
 		//perform page invalidation stuff here
 		shmem_invalidate_page_write(coherence_state->mapping, testp, inv_argv);
+		//delete_from_page_cache(testp);
 		ClearPageUptodate(testp);
-		delete_from_page_cache(testp);
 		coherence_state->state = 0;
 		unlock_page(pagep);
 	}else{
