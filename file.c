@@ -1541,7 +1541,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 	//this is stolen from find_get_entry in filemap.c
 	//spin locks stolen from fs/nilfs2/page.c 
 	pagep = radix_tree_lookup(&mapping->page_tree, coherence_state->pagenum);
-
+	lock_page(pagep);
 	if(pagep){
 
 		struct page * testp = pagep;
@@ -1553,7 +1553,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 	}else{
 		pr_info("ERROR page no longer in page cache");
 	}
-
+	unlock_page(pagep);
 	//delete page from the hashmap
 	//hash_del(&(coherence_state->link));
 
