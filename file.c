@@ -791,8 +791,7 @@ struct page *test_grab_cache_page_write_begin(struct address_space *mapping,
 					pgoff_t index, unsigned flags)
 {
 	struct page *page;
-	int fgp_flags = FGP_WRITE|FGP_CREAT;
-//FGP_LOCK|FGP_WRITE|FGP_CREAT;
+	int fgp_flags = FGP_LOCK|FGP_WRITE|FGP_CREAT;
 //removed lock requirement
 
 	if (flags & AOP_FLAG_NOFS)
@@ -808,7 +807,8 @@ struct page *test_grab_cache_page_write_begin(struct address_space *mapping,
 	//this is bad but I think it could show where the problem is
 	//unlock_page(page);
 	//lock_page(page);
-	if (PageLocked(page)){
+	
+	/*if (PageLocked(page)){
 		pr_err("PAGE WAS ALREADY LOCKED");
 		pr_err("PAGE WAS ALREADY LOCKED");
 		pr_err("PAGE WAS ALREADY LOCKED");
@@ -816,7 +816,7 @@ struct page *test_grab_cache_page_write_begin(struct address_space *mapping,
 		pr_err("PAGE WAS ALREADY LOCKED");
 	}else{
 		lock_page(page); //this appears to address the issue
-	}
+	}*/
 	return page;
 }
 
