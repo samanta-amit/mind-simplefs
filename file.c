@@ -141,10 +141,10 @@ struct page_lock_status {
 };
 
 struct page_lock_status acquire_page_lock(struct file * file, struct inode * inode, int currentpage, uintptr_t inode_pages_address, struct address_space * mapping, int mode){
-	pr_err("acquire page lock for page %d", currentpage);
+	//pr_err("acquire page lock for page %d", currentpage);
 	//acquire read lock for the hashtable
 	down_read(&hash_page_rwsem);
-	pr_err("after we got lock for page %d", currentpage);
+	//pr_err("after we got lock for page %d", currentpage);
 
 	//uintptr_t inode_pages_address = shmem_address[inode->i_ino] +
 	//	(PAGE_SIZE * (page));
@@ -156,7 +156,7 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 	struct shmem_coherence_state * coherence_state = shmem_in_hashmap(inode_pages_address);
 
 	if(coherence_state == NULL){
-		pr_err("page %d not found in hash table", currentpage);
+		//pr_err("page %d not found in hash table", currentpage);
 
 		up_read(&hash_page_rwsem);
 
@@ -169,12 +169,12 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 
 		if(coherence_state == NULL){
 
-			pr_err("page %d STILL not found in hash table", currentpage);
+			//pr_err("page %d STILL not found in hash table", currentpage);
 			//page not in hashmap add it (and acquire write lock)
 			//TODO make sure currentpage is correct
 			hash_shmem(inode_pages_address, mapping->host->i_ino, currentpage, mapping, mode);
 			page_write_locked = 1;
-			pr_err("page %d was added to hash table", currentpage);
+			//pr_err("page %d was added to hash table", currentpage);
 
 			coherence_state = shmem_in_hashmap(inode_pages_address);
 			if(coherence_state == NULL){
@@ -186,13 +186,13 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 			//invalidate_page_write(file, inode, currentpage);
 
 		}else{
-			pr_err("page %d was now found in hashtable", currentpage);
+			//pr_err("page %d was now found in hashtable", currentpage);
 			//could think about acquiring it in read mode and doing the jumping around thing again
 			down_write(&(coherence_state->rwsem));
 			page_write_locked = 1;
 			old_state = coherence_state->state;	
 			if(coherence_state->state < mode){
-				pr_err("updating the state for page %d", currentpage);
+				//pr_err("updating the state for page %d", currentpage);
 				//TODO make sure current page is correct
 				//invalidate_page_write(file, inode, currentpage);
 				coherence_state->state = mode;
@@ -203,14 +203,14 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 	}else{
 		down_write(&(coherence_state->rwsem));
 		page_write_locked = 1;
-		pr_err("page %d was found in hashtable", currentpage);
+		//pr_err("page %d was found in hashtable", currentpage);
 		up_read(&hash_page_rwsem);
 		old_state = coherence_state->state;
 		if(coherence_state->state < mode){
 			//TODO make sure current page is correct
 			//invalidate_page_write(file, inode, currentpage);
 			coherence_state->state = mode;
-			pr_err("upgrading state of page %d", currentpage);
+			//pr_err("upgrading state of page %d", currentpage);
 		}else{
 		}
 	}
@@ -313,7 +313,7 @@ static int mind_fetch_page_write(
         int r;
         unsigned long start_time = jiffies;
 
-	pr_info("lock ac 1");
+	//pr_info("lock ac 1");
 	spin_lock(&dummy_page_lock);
 
         ret_buf.data_size = PAGE_SIZE;
@@ -338,7 +338,7 @@ static int mind_fetch_page_write(
         // if is_kshmem_address(shmem_address) then task_struct is never
         // derefenced.
         r = send_pfault_to_mn(NULL, X86_PF_WRITE, shmem_address, 0, &ret_buf);
-	pr_info("r value mind_fetch_page_write %d", r);
+	//pr_info("r value mind_fetch_page_write %d", r);
         //pr_info("sending pfault to mn done");
         wait_node->ack_buf = ret_buf.ack_buf;
 
@@ -616,11 +616,6 @@ static int simplefs_readpage(struct file *file, struct page *page)
 {
 
 	pr_info("CALLING READPAGE");
-	pr_info("CALLING READPAGE");
-	pr_info("CALLING READPAGE");
-	pr_info("CALLING READPAGE");
-	pr_info("CALLING READPAGE");
-	pr_info("CALLING READPAGE");
 
 	struct buffer_head bh;
 	uintptr_t inode_pages_address;
@@ -648,24 +643,24 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	set_buffer_mapped(&bh);
 	set_buffer_uptodate(&bh);
 
-	pr_err("read page was %d\n", page);
+	//pr_err("read page was %d\n", page);
 	// If this page doesn't have buffers yet, 
 	// 0 below is the index of this block in the page; always 0 here
 	// since this file system always has block size == page size.
 	map_buffer_to_page(page, &bh, 0);
-	pr_err("map buffer to page");
+	//pr_err("map buffer to page");
 
 	SetPageUptodate(page);
-	pr_err("set page up to date %d", PageUptodate(page));
+	//pr_err("set page up to date %d", PageUptodate(page));
 
 	BUG_ON(!PageUptodate(page));
 	
-	pr_info("lock ac 2");
+	//pr_info("lock ac 2");
 
 	spin_lock(&dummy_page_lock);
-	pr_err("acquiring dummy page lock");
+	//pr_err("acquiring dummy page lock");
 	int cpu = get_cpu();
-	pr_info("lock ac 3");
+	//pr_info("lock ac 3");
 	spin_lock(&cnthread_inval_send_ack_lock[cpu]);
 
 	// TODO(stutsman): Why are we bothering with per-cpu buffers if we have
@@ -675,10 +670,10 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	//void *buf = get_dummy_page_dma_addr(get_cpu());
 	void *buf = get_dummy_page_dma_addr(cpu);
 
-	pr_err("got dummy buf addr %d", buf);
+	//pr_err("got dummy buf addr %d", buf);
 
 	r = mind_fetch_page(inode_pages_address, buf, &data_size);
-	pr_err("fetched page");
+	//pr_err("fetched page");
 
         BUG_ON(r);
 
@@ -686,7 +681,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	simplefs_kernel_page_write(page, get_dummy_page_buf_addr(cpu), PAGE_SIZE, 0);
 	//simplefs_kernel_page_write(page, buf, PAGE_SIZE, 0);
 
-	pr_err("wrote page");
+	//pr_err("wrote page");
 
 	//adds page to hashmap if not already in hashmap
 	//update_coherence(mapping->host, page->index, mapping, READ);
@@ -743,7 +738,7 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
         inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (page));
 
 	int cpu_id = get_cpu();
-	pr_info("lock ac 4");
+	//pr_info("lock ac 4");
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         //spin_lock(&dummy_page_lock);
@@ -826,15 +821,15 @@ int test_block_write_begin(struct address_space *mapping, loff_t pos, unsigned l
 	pgoff_t index = pos >> PAGE_SHIFT;
 	struct page *page;
 	int status;
-	pr_info("before grabbing page from page cache");
+	//pr_info("before grabbing page from page cache");
 	page = test_grab_cache_page_write_begin(mapping, index, flags);
-	pr_info("after grabbing page from page cache");
+	//pr_info("after grabbing page from page cache");
 	if (!page)
 		return -ENOMEM;
 
-	pr_info("before block_write_begin");
+	//pr_info("before block_write_begin");
 	status = __block_write_begin(page, pos, len, get_block);
-	pr_info("after block_write_begin");
+	//pr_info("after block_write_begin");
 	if (unlikely(status)) {
 		unlock_page(page);
 		put_page(page);
@@ -863,7 +858,7 @@ static int simplefs_write_begin(struct file *file,
 
 	    unsigned int currentpage = pos / PAGE_SIZE;
 	    unsigned int lastpage = (pos + len) / PAGE_SIZE;
-    pr_info("write begin page number %d end page number %d, for inode %ld write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
+    //pr_info("write begin page number %d end page number %d, for inode %ld write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
 
 
     struct inode *inode = file->f_inode;
@@ -876,9 +871,9 @@ static int simplefs_write_begin(struct file *file,
     //actual page since it causes null dereference stuff
     //
    
-	pr_info("before SIMPLEFS_SB");
+	//pr_info("before SIMPLEFS_SB");
     struct simplefs_sb_info *sbi = SIMPLEFS_SB(file->f_inode->i_sb);
-	pr_info("after SIMPLEFS_SB");
+	//pr_info("after SIMPLEFS_SB");
 
     int err;
     uint32_t nr_allocs = 0;
@@ -886,7 +881,10 @@ static int simplefs_write_begin(struct file *file,
     /* Check if the write can be completed (enough space?) */
     if (pos + len > SIMPLEFS_MAX_FILESIZE)
         return -ENOSPC;
+
+    //shouldn't have to worry about size changing here
     nr_allocs = max(pos + len, file->f_inode->i_size) / SIMPLEFS_BLOCK_SIZE;
+
     if (nr_allocs > file->f_inode->i_blocks - 1)
         nr_allocs -= file->f_inode->i_blocks - 1;
     else
@@ -904,11 +902,11 @@ static int simplefs_write_begin(struct file *file,
     }*/
 
 
-    pr_info("before block_write_begin");
+    //pr_info("before block_write_begin");
     /* prepare the write */
     err = test_block_write_begin(mapping, pos, len, flags, pagep,
                             simplefs_file_get_block);
-    pr_info("after block_write_begin");
+    //pr_info("after block_write_begin");
     /* if this failed, reclaim newly allocated blocks */
     if (err < 0)
         pr_err("newly allocated blocks reclaim not implemented yet\n");
@@ -942,7 +940,7 @@ static int simplefs_write_end(struct file *file,
     int ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
 
 
-    pr_err("write end page was %d\n", page);
+    //pr_err("write end page was %d\n", page);
 
     if (ret < len) {
         pr_err("wrote less than requested.");
@@ -1055,14 +1053,14 @@ static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
 
                 cond_resched();
 find_page:
-                pr_info("find page\n");
+                //pr_info("find page\n");
 
                 page = find_get_page(mapping, index);
                 //ClearPageUptodate(page);
 
 
                 if (!page) {
-                        pr_info("no page found from findgetpage\n");
+                        //pr_info("no page found from findgetpage\n");
                         if (iocb->ki_flags & IOCB_NOWAIT)
                                 goto would_block;
                         page_cache_sync_readahead(mapping,
@@ -1072,16 +1070,16 @@ find_page:
                         if (unlikely(page == NULL))
                                 goto no_cached_page;
                 }
-                pr_info("page found is %d\n", page);
+                //pr_info("page found is %d\n", page);
                 if (PageReadahead(page)) {
-                        pr_info("sync readahead\n");
+                        //pr_info("sync readahead\n");
                         page_cache_async_readahead(mapping,
                                         ra, filp, page,
                                         index, last_index - index);
 
                 }
                 if (!PageUptodate(page)) {
-                        pr_info("page not up to date\n");
+                        //pr_info("page not up to date\n");
                         if (iocb->ki_flags & IOCB_NOWAIT) {
                                 put_page(page);
                                 goto would_block;
@@ -1115,16 +1113,11 @@ find_page:
                         unlock_page(page);
                 }else if (PageLocked(page)){
 			pr_info("PAGE UP TO DATE BUT STILL LOCKED");
-			pr_info("PAGE UP TO DATE BUT STILL LOCKED");
-			pr_info("PAGE UP TO DATE BUT STILL LOCKED");
-			pr_info("PAGE UP TO DATE BUT STILL LOCKED");
-			pr_info("PAGE UP TO DATE BUT STILL LOCKED");
-			pr_info("PAGE UP TO DATE BUT STILL LOCKED");
 
 		}
                 //pr_info("page was marked up to date\n");
 page_ok:
-                pr_info("page_ok \n");
+                //pr_info("page_ok \n");
                 /*
                  * i_size must be checked after we know the page is Uptodate.
                  *
@@ -1175,12 +1168,12 @@ page_ok:
                  * Ok, we have the page, and it's up-to-date, so
                  * now we can copy it to user space...
                  */
-                pr_info("data being copied to page here \n");
+                //pr_info("data being copied to page here \n");
 		int is_locked = PageLocked(page);
-		pr_info("during data copy page locked status %d\n", is_locked);
+		//pr_info("during data copy page locked status %d\n", is_locked);
 
 		is_locked = rwsem_is_locked(&(page->mapping->host->i_rwsem));	
-		pr_info("inode locked status during read is %d\n", is_locked);
+		//pr_info("inode locked status during read is %d\n", is_locked);
 
 
                 ret = copy_page_to_iter(page, offset, nr, iter);
@@ -1200,14 +1193,14 @@ page_ok:
                 continue;
 
 page_not_up_to_date:
-                pr_info("page not up to date\n");
+                //pr_info("page not up to date\n");
                 /* Get exclusive access to the page ... */
                 error = lock_page_killable(page);
                 if (unlikely(error))
                         goto readpage_error;
 
 page_not_up_to_date_locked:
-                pr_info("page not up to date locked\n");
+                //pr_info("page not up to date locked\n");
                 /* Did it get truncated before we got the lock? */
                 if (!page->mapping) {
                         unlock_page(page);
@@ -1230,18 +1223,18 @@ readpage:
                 ClearPageError(page);
                 /* Start the actual read. The read will unlock the page. */
                 error = mapping->a_ops->readpage(filp, page);
-                pr_info("after readpage called \n");
-                pr_info("going to page_ok\n");
+                //pr_info("after readpage called \n");
+                //pr_info("going to page_ok\n");
                 goto page_ok;
 
 readpage_error:
-                pr_info("read page error \n");
+                //pr_info("read page error \n");
                 /* UHHUH! A synchronous read error occurred. Report it */
                 put_page(page);
                 goto out;
 
 no_cached_page:
-                pr_info("no cached page \n");
+                //pr_info("no cached page \n");
                 /*
                  * Ok, it wasn't cached, so we need to create a new
                  * page..
@@ -1265,7 +1258,7 @@ no_cached_page:
         }
 
 would_block:
-        pr_info("would_block\n");
+        //pr_info("would_block\n");
         error = -EAGAIN;
 out:
         ra->prev_pos = prev_index;
@@ -1274,7 +1267,7 @@ out:
 
         *ppos = ((loff_t)index << PAGE_SHIFT) + offset;
         file_accessed(filp);
-        pr_info("leaving generic_file_buffered_read\n");
+        //pr_info("leaving generic_file_buffered_read\n");
         return written ? written : error;
 }
 
@@ -1421,8 +1414,8 @@ u64 page_shmem_address_check(void *addr, unsigned long size)
     //pr_info("tesing shmem address callback");
     //pr_info("tesing shmem address callback");
     //pr_info("tesing shmem address callback");
-    pr_info("shmem address callback %ld", addr);
-    pr_info("shmem address callback 0x%lx", addr);
+    //pr_info("shmem address callback %ld", addr);
+    //pr_info("shmem address callback 0x%lx", addr);
 
 	//TODO this should be surrounded by locks
     down_read(&hash_page_rwsem);
@@ -1462,7 +1455,7 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 	int cpu_id = get_cpu();
 
         //spin_lock(&dummy_page_lock);
-	pr_info("lock ac 5");
+	//pr_info("lock ac 5");
 
         spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
@@ -1525,7 +1518,7 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 
 static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, void *inv_argv){
 
-	pr_info("shmem invalidate");
+	//pr_info("shmem invalidate");
 	void *pagep;
 
 	//acquire write lock on page
@@ -1536,7 +1529,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 	//spin_lock(&shmem_states_lock);
 
 	//lock page tree
-	pr_info("lock ac 6");
+	//pr_info("lock ac 6");
 
 	//spin_lock_irq(&mapping->tree_lock);
 
@@ -1572,7 +1565,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 
 u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
-    pr_info("invalidate page callback called address %ld", addr);
+    //pr_info("invalidate page callback called address %ld", addr);
 
 
     down_read(&hash_page_rwsem);
@@ -1586,10 +1579,6 @@ u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    up_write(&(coherence_state->rwsem)); //lock the page
     }else{
 	    up_read(&hash_page_rwsem);
-	    pr_info("ERROR memory wasn't ours");
-	    pr_info("ERROR memory wasn't ours");
-	    pr_info("ERROR memory wasn't ours");
-	    pr_info("ERROR memory wasn't ours");
 	    pr_info("ERROR memory wasn't ours");
 
     }
@@ -1639,22 +1628,22 @@ again:
 			break;
 		}
 
-		pr_err("before changes");
+		//pr_err("before changes");
 		//do locking stuff here
 		unsigned int currentpage = pos / PAGE_SIZE;
 		struct inode * inode = mapping->host;
-		pr_err("after inode pointer");	
-		pr_err("page index is %d", currentpage);
+		//pr_err("after inode pointer");	
+		//pr_err("page index is %d", currentpage);
 		uintptr_t inode_pages_address;
 		inode_pages_address = shmem_address[inode->i_ino] +
 			(PAGE_SIZE * (currentpage));
 
-		pr_err("after inode page address");
+		//pr_err("after inode page address");
 
 
 		struct page_lock_status temp = acquire_page_lock(file, inode, currentpage, inode_pages_address, mapping, WRITE);
 		//if page lock was acquired in write mode, then we have to update the remote state
-		pr_err("after acquire page lock");
+		//pr_err("after acquire page lock");
 
 		//need to copy in the most up to date version of the page
 
@@ -1675,22 +1664,14 @@ again:
 			flush_dcache_page(page);
 
 		}
-		pr_err("done with potential issues");
+		//pr_err("done with potential issues");
 
 		//request access to the page here
 		if(temp.old_state < READ){
 			pr_info("UPDATING PAGE DATA BEFORE APPEND");
-			pr_info("UPDATING PAGE DATA BEFORE APPEND");
-			pr_info("UPDATING PAGE DATA BEFORE APPEND");
-			pr_info("UPDATING PAGE DATA BEFORE APPEND");
-			pr_info("UPDATING PAGE DATA BEFORE APPEND");
-			pr_info("UPDATING PAGE DATA BEFORE APPEND");
-			pr_info("UPDATING PAGE DATA BEFORE APPEND");
-			pr_info("UPDATING PAGE DATA BEFORE APPEND");
-			pr_info("UPDATING PAGE DATA BEFORE APPEND");
 
 			//request in read mode, and copy the data over
-			pr_info("lock ac 7");
+		//	pr_info("lock ac 7");
 			spin_lock(&dummy_page_lock);
 			// TODO(stutsman): Why are we bothering with per-cpu buffers if we have
 			// a single lock around all of them here. Likely we want a per-cpu
