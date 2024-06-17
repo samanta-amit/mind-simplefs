@@ -125,7 +125,7 @@ static int mind_fetch_page_write(
 		pr_info("RECEIVED NACK");
 		pr_info("RECEIVED NACK");
 
-		return REC_NACK;
+		return -1;
 	}
         r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
@@ -173,7 +173,7 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
         void *buf = get_dummy_page_dma_addr(cpu_id);
         r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         //BUG_ON(r);
-	if(r == REC_NACK){
+	if(r <= 0){
 		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
 
 		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
@@ -1610,7 +1610,7 @@ static int get_remote_size_access(int inode_ino){
         void *buf = get_dummy_page_dma_addr(cpu_id);
         r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         //BUG_ON(r);
-	if(r == REC_NACK){
+	if(r <= 0){
 		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
 		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 		spin_unlock(&dummy_page_lock);
@@ -1706,13 +1706,13 @@ loff_t simple_i_size_read(const struct inode *inode){
 
 	if(inode->i_ino != 0){
 		pr_info("reading i_size for inode %d", inode->i_ino);
-		int size = size_loop(inode->i_ino);	
+		int size = -1;//size_loop(inode->i_ino);	
 		//lock acquired in size loop
 		if(size == -1){
 			//this means that we already have access
 			loff_t temp = inode->i_size;
 			pr_info("already had size access size was %d", temp);
-			spin_unlock(&size_lock);  
+			//spin_unlock(&size_lock);  
 
 			return temp; 
 		}else{
@@ -1763,13 +1763,13 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 
 	if(inode->i_ino != 0){
 	pr_info("writing i_size for inode %d", inode->i_ino);
-		int size = size_loop(inode->i_ino);	
+		int size = -1;//size_loop(inode->i_ino);	
 		//lock acquired in size loop
 		if(size == -1){
 			//this means that we already have access
 			pr_info("already had size access");
 			inode->i_size = i_size;
-			spin_unlock(&size_lock);  
+			//spin_unlock(&size_lock);  
 			return; 
 		}else{
 			pr_info("gained size access");
