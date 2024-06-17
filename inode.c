@@ -1653,7 +1653,8 @@ int size_loop(int ino){
 		//pr_info("lock ac 17");
 
 		spin_lock(&size_lock);  
-
+		int value = spin_trylock(&size_lock);
+		pr_info("trylock value is %d", value);
 		//pr_info("got lock, status was %d", inode_size_status[ino]);
 		//pr_info("inode size for inode address %d is %d", ino, inode_size_address[ino]);
 		if(inode_size_status[ino] == 2){
