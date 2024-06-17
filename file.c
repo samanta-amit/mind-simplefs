@@ -325,7 +325,6 @@ static int mind_fetch_page_write(
         wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
         BUG_ON(!wait_node);
 	
-	spin_unlock(&dummy_page_lock);
 
         //mind_pr_cache_dir_state(
         //        "BEFORFE PFAULT ACK/NACK",
@@ -356,6 +355,8 @@ static int mind_fetch_page_write(
         //        atomic_read(&wait_node->target_counter));
 
         data_size = ret_buf.data_size;
+	spin_lock(&dummy_page_lock);
+
         return 0;
 }
 
@@ -739,9 +740,10 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
 
 	int cpu_id = get_cpu();
 	//pr_info("lock ac 4");
+	
+        spin_lock(&dummy_page_lock);
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
-        //spin_lock(&dummy_page_lock);
        	//pr_info("invalidate_page_write 3");
 
         size_t data_size;
@@ -774,9 +776,8 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
         //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
         // spin_unlock(ptl_ptr);
-        //spin_unlock(&dummy_page_lock);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-
+        spin_unlock(&dummy_page_lock);
         //spin_unlock_irq(&mapping->tree_lock);
 
         return true;
@@ -1454,7 +1455,7 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 	
 	int cpu_id = get_cpu();
 
-        //spin_lock(&dummy_page_lock);
+        spin_lock(&dummy_page_lock);
 	//pr_info("lock ac 5");
 
         spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
@@ -1508,9 +1509,8 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         //pr_info("after FinACK");
 	
 	//spin_unlock(ptl_ptr);
-	//spin_unlock(&dummy_page_lock);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-
+	spin_unlock(&dummy_page_lock);
 	//spin_unlock_irq(&mapping->tree_lock);
 	return true;
 }
@@ -1518,7 +1518,7 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 
 static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, void *inv_argv){
 
-	//pr_info("shmem invalidate");
+	pr_info("shmem invalidate");
 	void *pagep;
 
 	//acquire write lock on page
@@ -1565,7 +1565,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 
 u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
-    //pr_info("invalidate page callback called address %ld", addr);
+    pr_info("invalidate page callback called address %ld", addr);
 
 
     down_read(&hash_page_rwsem);

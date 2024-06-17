@@ -437,7 +437,7 @@ extern unsigned long inode_lock_address;
 
 u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
-    //pr_info("invalidate page callback called address %ld", addr);
+    pr_info("invalidate page callback called address %ld", addr);
     int i;
     
     /*
@@ -461,9 +461,9 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 			//size is synced on size lock
 			//struct inode * inode = ilookup(super_block, i);
 			struct inode * inode = NULL;
-			while(spin_trylock(&size_lock) == 0){
-				
-			}
+			//while(spin_trylock(&size_lock) == 0){
+			//}
+			spin_lock(&size_lock);
 			time = current_kernel_time();
 			pr_info("acquire lock time is %ld", time.tv_sec); 
 	
@@ -490,7 +490,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
     if(addr == inode_lock_address){
 	    //pr_info("address callback was inode lock");
 		pr_info("lock ac 14");
-	    spin_lock(&remote_inode_lock);  
+	spin_lock(&remote_inode_lock);  
 	invalidate_lock_write(0, inv_argv, inode_lock_address);
 
 	/*pr_info("RECEIVED INVALIDATION");
@@ -1437,6 +1437,7 @@ int test_inode_lock_simple(void){
 
 
 void lock_loop(int ino){
+	//return; //testing removing this
 	while(1){
 		int i = 0;
 
@@ -1660,13 +1661,16 @@ static int get_remote_size_access(int inode_ino){
 //loops until access is gained
 //will return new size when accessed
 int size_loop(int ino){
+	return -1; //testing removing this
 	while(1){
 		int i = 0;
 
 		//down_write(&testsem);
 		//pr_info("lock ac 17");
-		while(spin_trylock(&size_lock) == 0){
-		}
+		//while(spin_trylock(&size_lock) == 0){
+		//}
+		spin_lock(&size_lock);	
+		
 		//pr_info("got lock, status was %d", inode_size_status[ino]);
 		//pr_info("inode size for inode address %d is %d", ino, inode_size_address[ino]);
 		if(inode_size_status[ino] == 2){
