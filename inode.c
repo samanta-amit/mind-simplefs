@@ -215,7 +215,7 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
 }
 
 
-static bool invalidate_size_write(int inode_ino, void *inv_argv){
+static bool invalidate_size_write(struct inode * inode, int inode_ino, void *inv_argv){
 
         uintptr_t inode_pages_address;
         int r;
@@ -251,7 +251,6 @@ static bool invalidate_size_write(int inode_ino, void *inv_argv){
         //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
 
 
-	struct inode * inode = simplefs_iget(super_block, inode_ino);
 	//can't use global inode lock to sync since it would deadlock
 
 	//already have inode size lock held so it should be synced 
@@ -456,16 +455,21 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 			pr_info("RECEIVED SIZE INVALIDATION %d", i);
 			pr_info("start time is %ld", time.tv_sec); 
 			//pr_info("lock ac 13");
+		
+			
+			//acquire inode unlocked 	
+			//size is synced on size lock
+			struct inode * inode = ilookup(super_block, i);
 			while(spin_trylock(&size_lock) == 0){
 				
 			}
 			time = current_kernel_time();
 			pr_info("acquire lock time is %ld", time.tv_sec); 
 	
-			invalidate_size_write(i, inv_argv);
+			invalidate_size_write(inode, i, inv_argv);
 			inode_size_status[i] = 0;
 			spin_unlock(&size_lock);  
-			
+			//unlock_inode(inode);	don't need since we don't acquire locked version
 			time = current_kernel_time();
 			pr_info("end time is %ld", time.tv_sec); 
 
