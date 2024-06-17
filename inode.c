@@ -60,7 +60,7 @@ extern unsigned long inode_lock_address;
 extern unsigned long inode_size_address[10];
 extern unsigned int inode_size_status[10];
 extern struct super_block * super_block;
-spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
+extern spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 
 
 struct rw_semaphore testsem;
@@ -94,8 +94,8 @@ static int mind_fetch_page_write(
         ret_buf.data_size = PAGE_SIZE;
         ret_buf.data = page_dma_address;
 
-        //pr_info("mind_fetch_page(shmem_address = 0x%lx, "
-        //        "page_dma_address = %p)", shmem_address, page_dma_address);
+        pr_info("mind_fetch_page(shmem_address = 0x%lx, "
+                "page_dma_address = %p)", shmem_address, page_dma_address);
 
         wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
         BUG_ON(!wait_node);
@@ -113,9 +113,10 @@ static int mind_fetch_page_write(
         // if is_kshmem_address(shmem_address) then task_struct is never
         // derefenced.
         r = send_pfault_to_mn(NULL, X86_PF_WRITE, shmem_address, 0, &ret_buf);
-	//pr_info("r value mind_fetch_page_write %d", r);
-        //pr_info("sending pfault to mn done");
+	pr_info("r value mind_fetch_page_write %d", r);
+        pr_info("sending pfault to mn done");
         wait_node->ack_buf = ret_buf.ack_buf;
+
 
         pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
         if(r <= 0){
@@ -1565,7 +1566,7 @@ pr_info("******INODE LOCK NESTED CALLED");
 
 static int get_remote_size_access(int inode_ino){
 
-	//pr_info("invalidate_page_write 1");
+	pr_info("invalidate_page_write 1");
         uintptr_t inode_pages_address;
         int r;
         struct mm_struct *mm;
@@ -1575,20 +1576,20 @@ static int get_remote_size_access(int inode_ino){
         void *ptrdummy;
         static struct cnthread_inv_msg_ctx send_ctx;
         loff_t test = 20; 
-	//pr_info("invalidate_page_write 2");
+	pr_info("invalidate_page_write 2");
 
 
         inode_pages_address = inode_size_address[inode_ino];
 
 	int cpu_id = get_cpu();
-		//pr_info("lock ac 15");
+	pr_info("lock ac 15");
 
         spin_lock(&dummy_page_lock);
-		//pr_info("lock ac 16");
+	pr_info("lock ac 16");
 
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
-       	//pr_info("invalidate_page_write 3");
+       	pr_info("invalidate_page_write 3");
 
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(cpu_id);
