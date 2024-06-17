@@ -452,13 +452,22 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	*/
    for(i = 0; i < 10; i++){
 	    if(addr == inode_size_address[i]){
-		    pr_info("RECEIVED SIZE INVALIDATION %d", i);
-		   	//pr_info("lock ac 13");
-			spin_lock(&size_lock);  
-
+			struct timespec time = current_kernel_time();
+			pr_info("RECEIVED SIZE INVALIDATION %d", i);
+			pr_info("start time is %ld", time.tv_sec); 
+			//pr_info("lock ac 13");
+			while(spin_trylock(&size_lock) == 0){
+				
+			}
+			time = current_kernel_time();
+			pr_info("acquire lock time is %ld", time.tv_sec); 
+	
 			invalidate_size_write(i, inv_argv);
 			inode_size_status[i] = 0;
 			spin_unlock(&size_lock);  
+			
+			time = current_kernel_time();
+			pr_info("end time is %ld", time.tv_sec); 
 
 			//inside of invalidate_size_write	
 			
@@ -1651,10 +1660,8 @@ int size_loop(int ino){
 
 		//down_write(&testsem);
 		//pr_info("lock ac 17");
-
-		spin_lock(&size_lock);  
-		int value = spin_trylock(&size_lock);
-		pr_info("trylock value is %d", value);
+		while(spin_trylock(&size_lock) == 0){
+		}
 		//pr_info("got lock, status was %d", inode_size_status[ino]);
 		//pr_info("inode size for inode address %d is %d", ino, inode_size_address[ino]);
 		if(inode_size_status[ino] == 2){
