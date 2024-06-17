@@ -355,7 +355,7 @@ static int mind_fetch_page_write(
         //        atomic_read(&wait_node->target_counter));
 
         data_size = ret_buf.data_size;
-	spin_lock(&dummy_page_lock);
+	spin_unlock(&dummy_page_lock);
 
         return 0;
 }
