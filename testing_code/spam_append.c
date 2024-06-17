@@ -22,9 +22,13 @@ int main(){
 		return 1;
 	}   
 	struct stat * stat_buf = malloc(sizeof(struct stat));
-	for(int i = 0; i < 10; i++){
+	for(int i = 0; i < 1000; i++){
+		int test_rand = rand();
+		//printf("random number is %d", test_rand % 10);
+		printf("%d\n", i);
 		ssize_t amount_written = write(fd, testbuf, 1);
-		usleep(1000000); // 100000 is .1 seconds
+		//was testing with 1000000 1 second
+		usleep(10000 * (test_rand % 10)); 
 	}
 	close(fd);
 	printf("done spamming appends");
