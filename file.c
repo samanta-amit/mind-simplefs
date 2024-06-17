@@ -314,7 +314,7 @@ static int mind_fetch_page_write(
         unsigned long start_time = jiffies;
 
 	//pr_info("lock ac 1");
-	spin_lock(&dummy_page_lock);
+	//spin_lock(&dummy_page_lock);
 
         ret_buf.data_size = PAGE_SIZE;
         ret_buf.data = page_dma_address;
@@ -355,7 +355,7 @@ static int mind_fetch_page_write(
         //        atomic_read(&wait_node->target_counter));
 
         data_size = ret_buf.data_size;
-	spin_unlock(&dummy_page_lock);
+	//spin_unlock(&dummy_page_lock);
 
         return 0;
 }
