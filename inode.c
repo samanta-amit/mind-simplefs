@@ -127,11 +127,9 @@ static int mind_fetch_page_write(
 
 		return -1;
 	}
-        r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
+	r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
         data_size = ret_buf.data_size;
-	//this means there is an error
-	//https://github.com/shsym/mind_internal/blame/c812d365ec3b6a8749f4f9172089d99bf0ad4e5f/mind_linux/arch/x86/mm/fault_disagg.c#L1095
 	if(r){
 		return -1;
 	}else{
@@ -142,7 +140,6 @@ static int mind_fetch_page_write(
         //        start_time, shmem_address,
         //        atomic_read(&wait_node->ack_counter),
         //        atomic_read(&wait_node->target_counter));
-
 }
 
 
@@ -238,10 +235,10 @@ static bool invalidate_size_write(struct inode * inode, int inode_ino, void *inv
 	int cpu_id = get_cpu();
 	//pr_info("lock ac 10");
 
-        spin_lock(&dummy_page_lock);
+        //spin_lock(&dummy_page_lock);
        	//pr_info("lock ac 11");
 
-       	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+       	//spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(cpu_id);
@@ -306,8 +303,8 @@ static bool invalidate_size_write(struct inode * inode, int inode_ino, void *inv
 
 
 	//spin_unlock(ptl_ptr);
-	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-	spin_unlock(&dummy_page_lock);
+	//spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+	//spin_unlock(&dummy_page_lock);
 	//spin_unlock_irq(&mapping->tree_lock);
 	return true;
 }
@@ -499,8 +496,8 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	spin_lock(&remote_inode_lock);  
 	invalidate_lock_write(0, inv_argv, inode_lock_address);
 
-	pr_info("RECEIVED LOCK INVALIDATION");
 	/*pr_info("RECEIVED INVALIDATION");
+	pr_info("RECEIVED INVALIDATION");
 	pr_info("RECEIVED INVALIDATION");
 	pr_info("RECEIVED INVALIDATION");
 	pr_info("RECEIVED INVALIDATION");
@@ -1443,7 +1440,7 @@ int test_inode_lock_simple(void){
 
 
 void lock_loop(int ino){
-	//return; //testing removing this
+	return; //testing removing this
 	while(1){
 		int i = 0;
 
@@ -1667,7 +1664,7 @@ static int get_remote_size_access(int inode_ino){
 //loops until access is gained
 //will return new size when accessed
 int size_loop(int ino){
-	return -1; //testing removing this
+	//return -1; //testing removing this
 
 	while(1){
 		int i = 0;
@@ -1676,7 +1673,7 @@ int size_loop(int ino){
 		//pr_info("lock ac 17");
 		//while(spin_trylock(&size_lock) == 0){
 		//}
-		spin_lock(&size_lock);	
+		//spin_lock(&size_lock);	
 		
 		//pr_info("got lock, status was %d", inode_size_status[ino]);
 		//pr_info("inode size for inode address %d is %d", ino, inode_size_address[ino]);
@@ -1687,11 +1684,12 @@ int size_loop(int ino){
 
 			int result = get_remote_size_access(ino);
 			if(result == -1){
-				spin_unlock(&size_lock);
+				//spin_unlock(&size_lock);
 				pr_info("retrying size loop");
 				continue; //force retry
 			}
 			inode_size_status[ino] = 2; //write
+
 			pr_info("updated inode size status %d", inode_size_status[ino]);
 			return result;
 		}
@@ -1713,13 +1711,17 @@ loff_t simple_i_size_read(const struct inode *inode){
 
 	if(inode->i_ino != 0){
 		pr_info("reading i_size for inode %d", inode->i_ino);
-		int size = -1;//size_loop(inode->i_ino);	
+		int size = -1;
+		spin_lock(&size_lock);
+		
+
+		size = size_loop(inode->i_ino);	
 		//lock acquired in size loop
 		if(size == -1){
 			//this means that we already have access
 			loff_t temp = inode->i_size;
 			pr_info("already had size access size was %d", temp);
-			//spin_unlock(&size_lock);  
+			spin_unlock(&size_lock);  
 
 			return temp; 
 		}else{
@@ -1770,13 +1772,15 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 
 	if(inode->i_ino != 0){
 	pr_info("writing i_size for inode %d", inode->i_ino);
-		int size = -1;//size_loop(inode->i_ino);	
+		spin_lock(&size_lock);
+		int size = -1;
+		size = size_loop(inode->i_ino);	
 		//lock acquired in size loop
 		if(size == -1){
 			//this means that we already have access
 			pr_info("already had size access");
 			inode->i_size = i_size;
-			//spin_unlock(&size_lock);  
+			spin_unlock(&size_lock);  
 			return; 
 		}else{
 			pr_info("gained size access");
