@@ -60,13 +60,13 @@ extern unsigned long inode_lock_address;
 extern unsigned long inode_size_address[10];
 extern unsigned int inode_size_status[10];
 extern struct super_block * super_block;
-extern spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
+//extern spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 
 
 struct rw_semaphore testsem;
 struct rw_semaphore testlock;
 //DEFINE_SPINLOCK(inode_dummy_page_lock);
-extern spinlock_t dummy_page_lock; 
+//extern spinlock_t dummy_page_lock; 
 DEFINE_SPINLOCK(remote_inode_lock);
 
 int remote_lock_status = 0; //0 not held, 1 read mode, 2 write mode
@@ -166,9 +166,9 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
 	int cpu_id = get_cpu();
 
 	//pr_info("lock ac 8");
-        spin_lock(&dummy_page_lock);
+        //spin_lock(&dummy_page_lock);
 	//pr_info("lock ac 9");
-	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+	//spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
        	//pr_info("invalidate_page_write 3");
 
@@ -179,8 +179,8 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
 	if(r <= 0){
 		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
 
-		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-	        spin_unlock(&dummy_page_lock);
+		//spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+	        //spin_unlock(&dummy_page_lock);
 
         	return false;
 	}
@@ -210,8 +210,8 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
         //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
         // spin_unlock(ptl_ptr);
-	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-        spin_unlock(&dummy_page_lock);
+	//spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+        //spin_unlock(&dummy_page_lock);
         //spin_unlock_irq(&mapping->tree_lock);
 
         return true;
@@ -327,10 +327,10 @@ static bool invalidate_lock_write(int inode_ino, void *inv_argv, unsigned long l
 	
 	int cpu_id = get_cpu();
        	//pr_info("lock ac 12");
-        spin_lock(&dummy_page_lock);
+        //spin_lock(&dummy_page_lock);
        	//pr_info("lock ac 13");
 
-	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+	//spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(cpu_id);
@@ -384,8 +384,8 @@ static bool invalidate_lock_write(int inode_ino, void *inv_argv, unsigned long l
         //pr_info("after FinACK");
 	
 	//spin_unlock(ptl_ptr);
-	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-	spin_unlock(&dummy_page_lock);
+	//spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+	//spin_unlock(&dummy_page_lock);
 	//spin_unlock_irq(&mapping->tree_lock);
 	return true;
 }
@@ -1439,7 +1439,6 @@ int test_inode_lock_simple(void){
 
 
 void lock_loop(int ino){
-	return; //testing removing this
 	while(1){
 		int i = 0;
 
@@ -1601,10 +1600,10 @@ static int get_remote_size_access(int inode_ino){
 	int cpu_id = get_cpu();
 	pr_info("lock ac 15");
 
-        spin_lock(&dummy_page_lock);
+        //spin_lock(&dummy_page_lock);
 	pr_info("lock ac 16");
 
-	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+	//spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
        	pr_info("invalidate_page_write 3");
 
@@ -1614,8 +1613,8 @@ static int get_remote_size_access(int inode_ino){
         //BUG_ON(r);
 	if(r <= 0){
 		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
-		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-		spin_unlock(&dummy_page_lock);
+		//spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+		//spin_unlock(&dummy_page_lock);
 
         	return -1;
 	}
@@ -1650,8 +1649,8 @@ static int get_remote_size_access(int inode_ino){
         //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
         // spin_unlock(ptl_ptr);
-	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-        spin_unlock(&dummy_page_lock);
+	//spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+        //spin_unlock(&dummy_page_lock);
         //spin_unlock_irq(&mapping->tree_lock);
 
         return result;
