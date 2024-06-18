@@ -493,8 +493,8 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	spin_lock(&remote_inode_lock);  
 	invalidate_lock_write(0, inv_argv, inode_lock_address);
 
+	pr_info("RECEIVED LOCK INVALIDATION");
 	/*pr_info("RECEIVED INVALIDATION");
-	pr_info("RECEIVED INVALIDATION");
 	pr_info("RECEIVED INVALIDATION");
 	pr_info("RECEIVED INVALIDATION");
 	pr_info("RECEIVED INVALIDATION");
@@ -1437,7 +1437,7 @@ int test_inode_lock_simple(void){
 
 
 void lock_loop(int ino){
-	return; //testing removing this
+	//return; //testing removing this
 	while(1){
 		int i = 0;
 
