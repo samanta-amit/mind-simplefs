@@ -259,8 +259,8 @@ static bool invalidate_size_write(struct inode * inode, int inode_ino, void *inv
 	//already have inode size lock held so it should be synced 
 	//naked reads only occur in writes, so there wouldn't be stale reads
 	//since we don't have concurrent writes
-	((int *)get_dummy_page_buf_addr(cpu_id))[0] = 20;//inode->i_size;//NEED to have inode lock for this 
-	pr_info("INVALIDATED SIZE WAS %d", 20);//inode->i_size);
+	((int *)get_dummy_page_buf_addr(cpu_id))[0] = inode->i_size;//NEED to have inode lock for this 
+	pr_info("INVALIDATED SIZE WAS %d", inode->i_size);
 	pr_info("size stored %d", ((int *)get_dummy_page_buf_addr(cpu_id))[0]);
 	//can't use i_size_read since it will be an infinite loop
 
@@ -462,8 +462,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 			
 			//acquire inode unlocked 	
 			//size is synced on size lock
-			//struct inode * inode = ilookup(super_block, i);
-			struct inode * inode = NULL;
+			struct inode * inode = ilookup(super_block, i);
 			//while(spin_trylock(&size_lock) == 0){
 			//}
 			spin_lock(&size_lock);
