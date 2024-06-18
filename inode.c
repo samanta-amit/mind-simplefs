@@ -238,10 +238,10 @@ static bool invalidate_size_write(struct inode * inode, int inode_ino, void *inv
 	int cpu_id = get_cpu();
 	//pr_info("lock ac 10");
 
-        //spin_lock(&dummy_page_lock);
+        spin_lock(&dummy_page_lock);
        	//pr_info("lock ac 11");
 
-       	//spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+       	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(cpu_id);
@@ -306,8 +306,8 @@ static bool invalidate_size_write(struct inode * inode, int inode_ino, void *inv
 
 
 	//spin_unlock(ptl_ptr);
-	//spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-	//spin_unlock(&dummy_page_lock);
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+	spin_unlock(&dummy_page_lock);
 	//spin_unlock_irq(&mapping->tree_lock);
 	return true;
 }
@@ -469,13 +469,13 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 			struct inode * inode = NULL;
 			//while(spin_trylock(&size_lock) == 0){
 			//}
-			//spin_lock(&size_lock);
+			spin_lock(&size_lock);
 			time = current_kernel_time();
 			pr_info("acquire lock time is %ld", time.tv_sec); 
 	
 			invalidate_size_write(inode, i, inv_argv);
 			inode_size_status[i] = 0;
-			//spin_unlock(&size_lock);  
+			spin_unlock(&size_lock);  
 			//unlock_inode(inode);	don't need since we don't acquire locked version
 			time = current_kernel_time();
 			pr_info("end time is %ld", time.tv_sec); 
@@ -1605,10 +1605,10 @@ static int get_remote_size_access(int inode_ino){
 	int cpu_id = get_cpu();
 	pr_info("lock ac 15");
 
-        //spin_lock(&dummy_page_lock);
+        spin_lock(&dummy_page_lock);
 	pr_info("lock ac 16");
 
-	//spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
        	pr_info("invalidate_page_write 3");
 
@@ -1618,8 +1618,8 @@ static int get_remote_size_access(int inode_ino){
         //BUG_ON(r);
 	if(r <= 0){
 		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
-	//	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-	//	spin_unlock(&dummy_page_lock);
+		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+		spin_unlock(&dummy_page_lock);
 
         	return -1;
 	}
@@ -1654,8 +1654,8 @@ static int get_remote_size_access(int inode_ino){
         //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
         // spin_unlock(ptl_ptr);
-	//spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-        //spin_unlock(&dummy_page_lock);
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+        spin_unlock(&dummy_page_lock);
         //spin_unlock_irq(&mapping->tree_lock);
 
         return result;
@@ -1667,7 +1667,7 @@ static int get_remote_size_access(int inode_ino){
 //loops until access is gained
 //will return new size when accessed
 int size_loop(int ino){
-	//return -1; //testing removing this
+	return -1; //testing removing this
 
 	while(1){
 		int i = 0;
@@ -1676,7 +1676,7 @@ int size_loop(int ino){
 		//pr_info("lock ac 17");
 		//while(spin_trylock(&size_lock) == 0){
 		//}
-		//spin_lock(&size_lock);	
+		spin_lock(&size_lock);	
 		
 		//pr_info("got lock, status was %d", inode_size_status[ino]);
 		//pr_info("inode size for inode address %d is %d", ino, inode_size_address[ino]);
@@ -1687,7 +1687,7 @@ int size_loop(int ino){
 
 			int result = get_remote_size_access(ino);
 			if(result == -1){
-				//spin_unlock(&size_lock);
+				spin_unlock(&size_lock);
 				pr_info("retrying size loop");
 				continue; //force retry
 			}
@@ -1732,7 +1732,7 @@ loff_t simple_i_size_read(const struct inode *inode){
 			pr_info("old size%d", temp);
 			non_const_inode->i_size = size;
 			temp = non_const_inode->i_size;
-			//spin_unlock(&size_lock);  
+			spin_unlock(&size_lock);  
 			return temp; 
 
 		}
@@ -1781,7 +1781,7 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 		}else{
 			pr_info("gained size access");
 			inode->i_size = i_size;
-			//spin_unlock(&size_lock);  
+			spin_unlock(&size_lock);  
 			return; 
 
 		}
@@ -1914,3 +1914,4 @@ static const struct inode_operations simplefs_inode_ops = {
 static const struct inode_operations symlink_inode_ops = {
     .get_link = simplefs_get_link,
 };
+
