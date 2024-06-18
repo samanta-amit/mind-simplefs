@@ -129,14 +129,20 @@ static int mind_fetch_page_write(
 	}
         r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
+        data_size = ret_buf.data_size;
+	//this means there is an error
+	//https://github.com/shsym/mind_internal/blame/c812d365ec3b6a8749f4f9172089d99bf0ad4e5f/mind_linux/arch/x86/mm/fault_disagg.c#L1095
+	if(r){
+		return -1;
+	}else{
+		return 1;
+	}
         //mind_pr_cache_dir_state(
         //        "AFTER PFAULT ACK/NACK",
         //        start_time, shmem_address,
         //        atomic_read(&wait_node->ack_counter),
         //        atomic_read(&wait_node->target_counter));
 
-        data_size = ret_buf.data_size;
-        return r;
 }
 
 
