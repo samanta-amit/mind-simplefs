@@ -1662,6 +1662,7 @@ static int get_remote_size_access(int inode_ino){
 //will return new size when accessed
 int size_loop(int ino){
 	return -1; //testing removing this
+
 	while(1){
 		int i = 0;
 
