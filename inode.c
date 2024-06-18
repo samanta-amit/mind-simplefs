@@ -1437,7 +1437,7 @@ int test_inode_lock_simple(void){
 
 
 void lock_loop(int ino){
-	//return; //testing removing this
+	return; //testing removing this
 	while(1){
 		int i = 0;
 
