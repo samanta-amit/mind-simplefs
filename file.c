@@ -1504,7 +1504,7 @@ u64 page_shmem_address_check(void *addr, unsigned long size)
 
 
 
-static bool shmem_invalidate_page_write(struct address_space * mapping, struct page * pagep, void *inv_argv){
+static bool shmem_invalidate_page_write(struct address_space * mapping, struct page * pagep, int page_index, void *inv_argv){
 
         struct page * testp = pagep;
         uintptr_t inode_pages_address;
@@ -1517,7 +1517,7 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         static struct cnthread_inv_msg_ctx send_ctx;
         loff_t test = 20; 
 	int i;
-        inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (pagep->index));
+        inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (page_index));
 	
 	int cpu_id = get_cpu();
 
@@ -1615,7 +1615,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		struct page * testp = pagep;
 		
 		//perform page invalidation stuff here
-		shmem_invalidate_page_write(coherence_state->mapping, testp, inv_argv);
+		shmem_invalidate_page_write(coherence_state->mapping, testp, coherence_state->pagenum, inv_argv);
 		//delete_from_page_cache(testp);
 		ClearPageUptodate(testp);
 		coherence_state->state = 0;
@@ -1624,7 +1624,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		pr_info("ERROR page no longer in page cache");
 		struct page * testp = NULL;
 		//this can also be reached if something has been truncated
-		shmem_invalidate_page_write(coherence_state->mapping, testp, inv_argv);
+		shmem_invalidate_page_write(coherence_state->mapping, testp, coherence_state->pagenum, inv_argv);
 
 		coherence_state->state = 0;
 
