@@ -448,22 +448,36 @@ static int simplefs_file_get_block(struct inode *inode,
     bool alloc = false;
     int ret = 0, bno;
     uint32_t extent;
+	pr_info("file get block called");
+	pr_info("file get block called");
+	pr_info("file get block called");
+	pr_info("file get block called");
+	pr_info("file get block called");
 
     /* If block number exceeds filesize, fail */
     if (iblock >= SIMPLEFS_MAX_BLOCKS_PER_EXTENT * SIMPLEFS_MAX_EXTENTS)
         return -EFBIG;
 
+	pr_info("get block 1");
     /* Read directory block from disk */
     bh_index = sb_bread(sb, ci->ei_block);
+	pr_info("get block 2");
+
     if (!bh_index)
-        return -EIO;
+        return -EIO;	
+    pr_info("get block 3");
+
     index = (struct simplefs_file_ei_block *) bh_index->b_data;
+    pr_info("get block 4");
 
     extent = simplefs_ext_search(index, iblock);
+    pr_info("get block 5");
+
     if (extent == -1) {
         ret = -EFBIG;
         goto brelse_index;
     }
+    pr_info("get block 6");
 
     /*
      * Check if iblock is already allocated. If not and create is true,
@@ -488,12 +502,15 @@ static int simplefs_file_get_block(struct inode *inode,
         bno = index->extents[extent].ee_start + iblock -
               index->extents[extent].ee_block;
     }
+    pr_info("get block 7");
 
     /* Map the physical block to to the given buffer_head */
     map_bh(bh_result, sb, bno);
+    pr_info("get block 8");
 
 brelse_index:
     brelse(bh_index);
+    pr_info("get block 9");
 
     return ret;
 }
@@ -726,6 +743,14 @@ void simple_do_invalidatepage(struct page *page, unsigned int offset,
 int simple_block_write_full_page(struct page *page, get_block_t *get_block,
 			struct writeback_control *wbc)
 {
+
+	pr_info("writeback function called");
+	pr_info("writeback function called");
+	pr_info("writeback function called");
+	pr_info("writeback function called");
+	pr_info("writeback function called");
+	pr_info("writeback function called");
+
 	struct inode * const inode = page->mapping->host;
 	loff_t i_size = i_size_read(inode);
 	const pgoff_t end_index = i_size >> PAGE_SHIFT;
@@ -775,12 +800,18 @@ int simple_block_write_full_page(struct page *page, get_block_t *get_block,
  */
 static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 {
+
+	//probably fix by acquiring in write mode here and releasing 
+	//at end of this function
 	pr_info("simplefs_writepage");
-    //return simple_block_write_full_page(page, simplefs_file_get_block, wbc);
+
+	//struct page_lock_status temp = acquire_page_lock(NULL, inode, currentpage, inode_pages_address, mapping, WRITE);
+
+	return simple_block_write_full_page(page, simplefs_file_get_block, wbc);
 
 	//hack to try and prevent problems with page writeback	
-	unlock_page(page);
-	return 0; 
+	//unlock_page(page);
+	//return 0; 
 }
 
 
