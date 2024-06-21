@@ -75,7 +75,7 @@ static int __init simplefs_init(void)
     set_shmem_address_check(shmem_address_check);
     int i;
     int ret;
-    u64 alloc_size = sizeof(3 * PAGE_SIZE);
+    u64 alloc_size = sizeof(6 * PAGE_SIZE);
 
     pr_info("loading simplefs\n");
     pr_info("value of readAddress %d", readAddress);

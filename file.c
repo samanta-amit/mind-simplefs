@@ -776,11 +776,11 @@ int simple_block_write_full_page(struct page *page, get_block_t *get_block,
 static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 {
 	pr_info("simplefs_writepage");
-    return simple_block_write_full_page(page, simplefs_file_get_block, wbc);
+    //return simple_block_write_full_page(page, simplefs_file_get_block, wbc);
 
 	//hack to try and prevent problems with page writeback	
-	//unlock_page(page);
-	//return 0; 
+	unlock_page(page);
+	return 0; 
 }
 
 
@@ -1537,7 +1537,11 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
-        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), PAGE_SIZE, &test);
+	if(testp == NULL){	
+		pr_info("WHAT SHOULD WE DO IN THIS CASE?");
+	}else{
+        	simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), PAGE_SIZE, &test);
+	}
 
         //for(i = 0; i < 20; i++){
         //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
@@ -1618,6 +1622,12 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		unlock_page(pagep);
 	}else{
 		pr_info("ERROR page no longer in page cache");
+		struct page * testp = NULL;
+		//this can also be reached if something has been truncated
+		shmem_invalidate_page_write(coherence_state->mapping, testp, inv_argv);
+
+		coherence_state->state = 0;
+
 	}
 	//delete page from the hashmap
 	//hash_del(&(coherence_state->link));
