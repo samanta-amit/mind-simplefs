@@ -703,6 +703,72 @@ static int simplefs_readpage(struct file *file, struct page *page)
 }
 
 
+void simple_do_invalidatepage(struct page *page, unsigned int offset,
+		       unsigned int length)
+{
+	void (*invalidatepage)(struct page *, unsigned int, unsigned int);
+
+	invalidatepage = page->mapping->a_ops->invalidatepage;
+#ifdef CONFIG_BLOCK
+	if (!invalidatepage)
+		invalidatepage = block_invalidatepage;
+#endif
+	if (invalidatepage)
+		(*invalidatepage)(page, offset, length);
+}
+
+
+
+
+/*
+ * The generic ->writepage function for buffer-backed address_spaces
+ */
+int simple_block_write_full_page(struct page *page, get_block_t *get_block,
+			struct writeback_control *wbc)
+{
+	struct inode * const inode = page->mapping->host;
+	loff_t i_size = i_size_read(inode);
+	const pgoff_t end_index = i_size >> PAGE_SHIFT;
+	unsigned offset;
+	pr_info("block_write_full_page 1");
+	/* Is the page fully inside i_size? */
+	if (page->index < end_index)
+		return __block_write_full_page(inode, page, get_block, wbc,
+					       end_buffer_async_write);
+	pr_info("block_write_full_page 2");
+
+	/* Is the page fully outside i_size? (truncate in progress) */
+	offset = i_size & (PAGE_SIZE-1);
+	if (page->index >= end_index+1 || !offset) {
+		/*
+		 * The page may have dirty, unmapped buffers.  For example,
+		 * they may have been added in ext3_writepage().  Make them
+		 * freeable here, so the page does not leak.
+		 */
+	pr_info("block_write_full_page 3");
+
+		simple_do_invalidatepage(page, 0, PAGE_SIZE);
+	pr_info("block_write_full_page 4");
+
+		unlock_page(page);
+		return 0; /* don't care */
+	}
+	pr_info("block_write_full_page 5");
+
+	/*
+	 * The page straddles i_size.  It must be zeroed out on each and every
+	 * writepage invocation because it may be mmapped.  "A file is mapped
+	 * in multiples of the page size.  For a file that is not a multiple of
+	 * the  page size, the remaining memory is zeroed when mapped, and
+	 * writes to that region are not written out to the file."
+	 */
+	zero_user_segment(page, offset, PAGE_SIZE);
+	pr_info("block_write_full_page 6");
+
+	return __block_write_full_page(inode, page, get_block, wbc,
+							end_buffer_async_write);
+}
+
 /*
  * Called by the page cache to write a dirty page to the physical disk (when
  * sync is called or when memory is needed).
@@ -710,11 +776,11 @@ static int simplefs_readpage(struct file *file, struct page *page)
 static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 {
 	pr_info("simplefs_writepage");
-    //return block_write_full_page(page, simplefs_file_get_block, wbc);
+    return simple_block_write_full_page(page, simplefs_file_get_block, wbc);
 
 	//hack to try and prevent problems with page writeback	
-	unlock_page(page);
-	return 0; 
+	//unlock_page(page);
+	//return 0; 
 }
 
 
@@ -1823,7 +1889,7 @@ ssize_t simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *fr
 	ssize_t ret;
 
 	inode_lock(inode);
-	pr_info("write iter i_size_read");
+	//pr_info("write iter i_size_read");
 	i_size_read(inode); 
 
 	ret = generic_write_checks(iocb, from);

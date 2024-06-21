@@ -1678,7 +1678,7 @@ int size_loop(int ino){
 		if(inode_size_status[ino] == 2){
 			return -1;
 		}else{
-			pr_info("updating size status ");
+//			pr_info("updating size status ");
 
 			int result = get_remote_size_access(ino);
 			if(result == -1){
@@ -1688,7 +1688,7 @@ int size_loop(int ino){
 			}
 			inode_size_status[ino] = 2; //write
 
-			pr_info("updated inode size status %d", inode_size_status[ino]);
+//			pr_info("updated inode size status %d", inode_size_status[ino]);
 			return result;
 		}
 
@@ -1708,7 +1708,7 @@ int  test_counter = 0;
 loff_t simple_i_size_read(const struct inode *inode){
 
 	if(inode->i_ino != 0){
-		pr_info("reading i_size for inode %d", inode->i_ino);
+	//	pr_info("reading i_size for inode %d", inode->i_ino);
 		int size = -1;
 		spin_lock(&size_lock);
 		
@@ -1718,18 +1718,18 @@ loff_t simple_i_size_read(const struct inode *inode){
 		if(size == -1){
 			//this means that we already have access
 			loff_t temp = inode->i_size;
-			pr_info("already had size access size was %d", temp);
+	//		pr_info("already had size access size was %d", temp);
 			spin_unlock(&size_lock);  
 
 			return temp; 
 		}else{
-			pr_info("requesting size information");
+	//		pr_info("requesting size information");
 			//have to remove const here
 			struct inode * non_const_inode = (struct inode *)inode;
 	
-			pr_info("new size %d",size);	
+	//		pr_info("new size %d",size);	
 			loff_t temp = inode->i_size;
-			pr_info("old size%d", temp);
+	//		pr_info("old size%d", temp);
 			non_const_inode->i_size = size;
 			temp = non_const_inode->i_size;
 			spin_unlock(&size_lock);  
@@ -1769,25 +1769,25 @@ loff_t simple_i_size_read(const struct inode *inode){
 void simple_i_size_write(struct inode *inode, loff_t i_size){
 
 	if(inode->i_ino != 0){
-	pr_info("writing i_size for inode %d", inode->i_ino);
+	//pr_info("writing i_size for inode %d", inode->i_ino);
 		spin_lock(&size_lock);
 		int size = -1;
 		size = size_loop(inode->i_ino);	
 		//lock acquired in size loop
 		if(size == -1){
 			//this means that we already have access
-			pr_info("already had size access");
+			//pr_info("already had size access");
 			inode->i_size = i_size;
 			spin_unlock(&size_lock);  
 			return; 
 		}else{
-			pr_info("gained size access");
+			//pr_info("gained size access");
 			inode->i_size = i_size;
 			spin_unlock(&size_lock);  
 			return; 
 
 		}
-		pr_info("updated size to %d", i_size);
+		//pr_info("updated size to %d", i_size);
 	}else{
 		inode->i_size = i_size;
 
