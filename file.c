@@ -44,7 +44,7 @@ enum coherence_state {
 // Ensures no two threads attempt to use the same dummy buffer at the same time.
 // Each dummy buffer is per-core, but this prevents context switches and
 // thread migrations from causing races to the buffers.
-DEFINE_SPINLOCK(dummy_page_lock);
+//DEFINE_SPINLOCK(dummy_page_lock);
 
 #define READ 1
 #define WRITE 2
@@ -675,7 +675,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	
 	//pr_info("lock ac 2");
 
-	spin_lock(&dummy_page_lock);
+	//spin_lock(&dummy_page_lock);
 	//pr_err("acquiring dummy page lock");
 	int cpu = get_cpu();
 	//pr_info("lock ac 3");
@@ -705,7 +705,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	//update_coherence(mapping->host, page->index, mapping, READ);
 
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu]);
-	spin_unlock(&dummy_page_lock);
+	//spin_unlock(&dummy_page_lock);
 	unlock_page(page);
 
 	//unlock page pointer
@@ -838,7 +838,7 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
 	int cpu_id = get_cpu();
 	//pr_info("lock ac 4");
 	
-        spin_lock(&dummy_page_lock);
+        //spin_lock(&dummy_page_lock);
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
        	//pr_info("invalidate_page_write 3");
@@ -874,7 +874,7 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
 
         // spin_unlock(ptl_ptr);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-        spin_unlock(&dummy_page_lock);
+        //spin_unlock(&dummy_page_lock);
         //spin_unlock_irq(&mapping->tree_lock);
 
         return true;
@@ -1551,9 +1551,9 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (page_index));
 	
 	int cpu_id = get_cpu();
-
-        spin_lock(&dummy_page_lock);
-	//pr_info("lock ac 5");
+	
+        //spin_lock(&dummy_page_lock);
+	pr_info("lock ac 5");
 
         spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
@@ -1611,7 +1611,7 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 	
 	//spin_unlock(ptl_ptr);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-	spin_unlock(&dummy_page_lock);
+	//spin_unlock(&dummy_page_lock);
 	//spin_unlock_irq(&mapping->tree_lock);
 	return true;
 }
@@ -1778,13 +1778,16 @@ again:
 			pr_info("UPDATING PAGE DATA BEFORE APPEND");
 
 			//request in read mode, and copy the data over
-		//	pr_info("lock ac 7");
-			spin_lock(&dummy_page_lock);
+			//pr_info("lock ac 7");
+			int cpu_id = get_cpu();
+
+			spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+			//spin_lock(&dummy_page_lock);
 			// TODO(stutsman): Why are we bothering with per-cpu buffers if we have
 			// a single lock around all of them here. Likely we want a per-cpu
 			// spinlock.
 			size_t data_size;
-			int cpu_id = get_cpu();
 			void *buf = get_dummy_page_dma_addr(cpu_id);
 			int r = mind_fetch_page(inode_pages_address, buf, &data_size);
 			BUG_ON(r);
@@ -1794,7 +1797,8 @@ again:
 			//update_coherence(mapping->host, page->index, mapping, READ);
 
 
-			spin_unlock(&dummy_page_lock);
+			spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+			//spin_unlock(&dummy_page_lock);
 			//unlock_page(page);
 
 
