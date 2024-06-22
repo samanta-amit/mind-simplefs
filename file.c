@@ -1648,9 +1648,11 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		//perform page invalidation stuff here
 		shmem_invalidate_page_write(coherence_state->mapping, testp, coherence_state->pagenum, inv_argv);
 		//delete_from_page_cache(testp);
-		ClearPageUptodate(testp);
+		//ClearPageUptodate(testp);
+		ClearPageDirty(testp);
 		coherence_state->state = 0;
-		unlock_page(pagep);
+		delete_from_page_cache(testp);
+
 	}else{
 		pr_info("ERROR page no longer in page cache");
 		struct page * testp = NULL;
