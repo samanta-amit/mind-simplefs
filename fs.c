@@ -209,6 +209,10 @@ static int __init simplefs_init(void)
             for(i = 0; i < 10; i++){
                     pr_info("%ld, ", inode_size_address[i]);
             }
+	    pr_info("inode lock addresses:");
+            for(i = 0; i < 10; i++){
+                    pr_info("%ld, ", inode_lock_address[i]);
+            }
             pr_info("\n");
 
 

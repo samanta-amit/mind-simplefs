@@ -378,11 +378,11 @@ extern unsigned long inode_lock_address;
 		return 1;
 	}
 
-	for(i = 0; i < 10; i++){
-		if(addr == inode_lock_address[i]){
+	//for(i = 0; i < 10; i++){
+		if(addr == inode_lock_address[0]){
 			return 1;
 		}
-	}
+	//}
 	
 
 	//check to see if this is a page address
@@ -435,10 +435,10 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    return 1;
     }
 
-    for(i = 0; i < 10; i++){    
-	    if(addr == inode_lock_address[i]){
+    //for(i = 0; i < 10; i++){    
+	    if(addr == inode_lock_address[0]){
 		    spin_lock(&remote_inode_lock);  
-		    invalidate_lock_write(0, inv_argv, inode_lock_address[i]);
+		    invalidate_lock_write(0, inv_argv, inode_lock_address[0]);
 
 		    //downgrade copy (need to separate for invalid and shared)
 		    remote_lock_status[i] = 0;
@@ -446,7 +446,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 		    spin_unlock(&remote_inode_lock);  
 		    return 1;
 	    }
-    }
+    //}
 
     //do page sync (in file.c)
     page_testing_invalidate_page_callback(addr, inv_argv);
@@ -1387,7 +1387,7 @@ void lock_loop(int ino){
 			return;
 		}else{
 
-			bool acquired = get_remote_lock_access(0, inode_lock_address[ino]);
+			bool acquired = get_remote_lock_access(0, inode_lock_address[0]);
 			if(!acquired){
 				spin_unlock(&remote_inode_lock);
 				continue; //force retry
@@ -1497,7 +1497,7 @@ void simple_dfs_inode_lock_nested(struct inode *inode, unsigned subclass){
 	pr_info("******INODE LOCK NESTED CALLED");
 
 	down_write_nested(&inode->i_rwsem, subclass);
-	lock_loop(inode->i_ino);
+	//lock_loop(inode->i_ino);
 
 }
 
