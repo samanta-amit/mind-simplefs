@@ -26,8 +26,9 @@ unsigned long inode_address[10];
 unsigned long inode_size_address[10];
 unsigned int inode_size_status[10];
 unsigned long size_lock_address;
-unsigned long inode_lock_address;
-unsigned long combined_address[32];
+unsigned long inode_lock_address[10];
+int remote_lock_status[10];
+unsigned long combined_address[41];
 static int readAddress = 0;
 //https://lynxbee.com/passing-command-line-arguments-parameters-to-linux-kernel-module/#.ZAUI5oDMKCg
 //https://tldp.org/LDP/lkmpg/2.4/html/x354.htm (also used this for printing longs)
@@ -123,8 +124,26 @@ static int __init simplefs_init(void)
 
 
 	size_lock_address = (uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
-	inode_lock_address = (uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
-	pr_info("size lock and inode lock %ld %ld", size_lock_address, inode_lock_address);
+	//inode_lock_address = (uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
+	for(i = 0; i < 10; i++){
+		inode_lock_address[i] = (uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
+		remote_lock_status[i] = 0;
+	}
+	pr_info("single print inode lock addresses %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld", inode_lock_address[0],
+			inode_lock_address[1],
+			inode_lock_address[2],
+			inode_lock_address[3],
+			inode_lock_address[4],
+			inode_lock_address[5],
+			inode_lock_address[6],
+			inode_lock_address[7],
+			inode_lock_address[8],
+			inode_lock_address[9]
+
+	       );
+
+
+	pr_info("size lock %ld", size_lock_address);
 
 
 	pr_info("inode size addresses:");
@@ -148,6 +167,9 @@ static int __init simplefs_init(void)
 
 
 
+	pr_info("inode locking addresses:");
+
+
 
 
             pr_info("\n");
@@ -160,12 +182,14 @@ static int __init simplefs_init(void)
 	    	inode_address[i-10] = combined_address[i];
 	    }
 
-	    size_lock_address = combined_address[20];
-	    inode_lock_address = combined_address[21];
-
-	    for(i = 22; i < 31; i++){
-		inode_size_address[i-22] = combined_address[i];
+	    for(i = 20; i < 30; i++){
+		inode_size_address[i-20] = combined_address[i];
 	    }
+	    for(i = 30; i < 40; i++){
+		inode_lock_address[i-30] = combined_address[i];
+	    }
+	    size_lock_address = combined_address[41];
+
 
 	    pr_info("read addresses:");
 	    for(i = 0; i < 10; i++){

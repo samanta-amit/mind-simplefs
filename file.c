@@ -74,7 +74,6 @@ DEFINE_HASHTABLE(shmem_states, 8); // 8 = 256 buckets
 
 
 static void hash_shmem(unsigned long shmem_addr, int inodenum, int pagenum, struct address_space *mapping, int state) {
-	//pr_info("adding shmem information to hashtable");
 	struct shmem_coherence_state *shmem_state;
 	//refer more to Documentation/kernel-hacking/hacking.rst
 	shmem_state = kmalloc(sizeof(struct shmem_coherence_state), GFP_KERNEL);
@@ -141,10 +140,8 @@ struct page_lock_status {
 };
 
 struct page_lock_status acquire_page_lock(struct file * file, struct inode * inode, int currentpage, uintptr_t inode_pages_address, struct address_space * mapping, int mode){
-	//pr_err("acquire page lock for page %d", currentpage);
 	//acquire read lock for the hashtable
 	down_read(&hash_page_rwsem);
-	//pr_err("after we got lock for page %d", currentpage);
 
 	//uintptr_t inode_pages_address = shmem_address[inode->i_ino] +
 	//	(PAGE_SIZE * (page));
@@ -156,7 +153,6 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 	struct shmem_coherence_state * coherence_state = shmem_in_hashmap(inode_pages_address);
 
 	if(coherence_state == NULL){
-		//pr_err("page %d not found in hash table", currentpage);
 
 		up_read(&hash_page_rwsem);
 
@@ -169,12 +165,10 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 
 		if(coherence_state == NULL){
 
-			//pr_err("page %d STILL not found in hash table", currentpage);
 			//page not in hashmap add it (and acquire write lock)
 			//TODO make sure currentpage is correct
 			hash_shmem(inode_pages_address, mapping->host->i_ino, currentpage, mapping, mode);
 			page_write_locked = 1;
-			//pr_err("page %d was added to hash table", currentpage);
 
 			coherence_state = shmem_in_hashmap(inode_pages_address);
 			if(coherence_state == NULL){
@@ -186,13 +180,11 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 			//invalidate_page_write(file, inode, currentpage);
 
 		}else{
-			//pr_err("page %d was now found in hashtable", currentpage);
 			//could think about acquiring it in read mode and doing the jumping around thing again
 			down_write(&(coherence_state->rwsem));
 			page_write_locked = 1;
 			old_state = coherence_state->state;	
 			if(coherence_state->state < mode){
-				//pr_err("updating the state for page %d", currentpage);
 				//TODO make sure current page is correct
 				//invalidate_page_write(file, inode, currentpage);
 				coherence_state->state = mode;
@@ -203,14 +195,12 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 	}else{
 		down_write(&(coherence_state->rwsem));
 		page_write_locked = 1;
-		//pr_err("page %d was found in hashtable", currentpage);
 		up_read(&hash_page_rwsem);
 		old_state = coherence_state->state;
 		if(coherence_state->state < mode){
 			//TODO make sure current page is correct
 			//invalidate_page_write(file, inode, currentpage);
 			coherence_state->state = mode;
-			//pr_err("upgrading state of page %d", currentpage);
 		}else{
 		}
 	}
@@ -234,7 +224,6 @@ static void mind_pr_cache_dir_state(const char* msg,
 	send_cache_dir_full_always_check(
 		DISAGG_KERN_TGID, shmem_address, &state, &sharer,
 		&dir_size, &dir_lock, &inv_cnt, CN_SWITCH_REG_SYNC_NONE);
-	//pr_info("%s - cpu :%d, tgid: %u, addr: 0x%lx, ack_cnt: %ld, tar_cnt: %ld, timeout (%u ms) / state: 0x%x, sharer: 0x%x\n",
 	//	msg,
 	//	smp_processor_id(), DISAGG_KERN_TGID, shmem_address,
 	//	ack_counter, target_counter,
@@ -265,8 +254,6 @@ static int mind_fetch_page(
 	ret_buf.data_size = PAGE_SIZE;
 	ret_buf.data = page_dma_address;
 
-	//pr_info("mind_fetch_page(shmem_address = 0x%lx, "
-	//	"page_dma_address = %p)", shmem_address, page_dma_address);
 
 	wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
 	BUG_ON(!wait_node);
@@ -284,14 +271,12 @@ static int mind_fetch_page(
 	// if is_kshmem_address(shmem_address) then task_struct is never
 	// derefenced.
 	r = send_pfault_to_mn(NULL, 0, shmem_address, 0, &ret_buf);
-	//pr_info("sending pfault to mn done");
 	wait_node->ack_buf = ret_buf.ack_buf;
 
 	pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
 	if(r <= 0)
 	{
 		cancel_waiting_for_nack(wait_node);
-		pr_info("stopped waiting for nack");
 	}
 	r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
@@ -313,14 +298,11 @@ static int mind_fetch_page_write(
         int r;
         unsigned long start_time = jiffies;
 
-	//pr_info("lock ac 1");
 	//spin_lock(&dummy_page_lock);
 
         ret_buf.data_size = PAGE_SIZE;
         ret_buf.data = page_dma_address;
 
-        //pr_info("mind_fetch_page(shmem_address = 0x%lx, "
-        //        "page_dma_address = %p)", shmem_address, page_dma_address);
 
         wait_node = add_waiting_node(DISAGG_KERN_TGID, shmem_address, NULL);
         BUG_ON(!wait_node);
@@ -337,14 +319,11 @@ static int mind_fetch_page_write(
         // if is_kshmem_address(shmem_address) then task_struct is never
         // derefenced.
         r = send_pfault_to_mn(NULL, X86_PF_WRITE, shmem_address, 0, &ret_buf);
-	//pr_info("r value mind_fetch_page_write %d", r);
-        //pr_info("sending pfault to mn done");
         wait_node->ack_buf = ret_buf.ack_buf;
 
         pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
         if(r <= 0){
                 cancel_waiting_for_nack(wait_node);
-		pr_info("stopped waiting");
 	}
         r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
@@ -448,36 +427,25 @@ static int simplefs_file_get_block(struct inode *inode,
     bool alloc = false;
     int ret = 0, bno;
     uint32_t extent;
-	pr_info("file get block called");
-	pr_info("file get block called");
-	pr_info("file get block called");
-	pr_info("file get block called");
-	pr_info("file get block called");
 
     /* If block number exceeds filesize, fail */
     if (iblock >= SIMPLEFS_MAX_BLOCKS_PER_EXTENT * SIMPLEFS_MAX_EXTENTS)
         return -EFBIG;
 
-	pr_info("get block 1");
     /* Read directory block from disk */
     bh_index = sb_bread(sb, ci->ei_block);
-	pr_info("get block 2");
 
     if (!bh_index)
         return -EIO;	
-    pr_info("get block 3");
 
     index = (struct simplefs_file_ei_block *) bh_index->b_data;
-    pr_info("get block 4");
 
     extent = simplefs_ext_search(index, iblock);
-    pr_info("get block 5");
 
     if (extent == -1) {
         ret = -EFBIG;
         goto brelse_index;
     }
-    pr_info("get block 6");
 
     /*
      * Check if iblock is already allocated. If not and create is true,
@@ -502,15 +470,12 @@ static int simplefs_file_get_block(struct inode *inode,
         bno = index->extents[extent].ee_start + iblock -
               index->extents[extent].ee_block;
     }
-    pr_info("get block 7");
 
     /* Map the physical block to to the given buffer_head */
     map_bh(bh_result, sb, bno);
-    pr_info("get block 8");
 
 brelse_index:
     brelse(bh_index);
-    pr_info("get block 9");
 
     return ret;
 }
@@ -546,7 +511,6 @@ static void update_coherence(struct inode * inode, int page, struct address_spac
     inode_pages_address = shmem_address[inode->i_ino] +
 	    (PAGE_SIZE * (page));
 
-	//pr_info("update coherence called");
     //TODO add hashtable locks
 
     //TODO at the moment shmem_in_hashmap acquires the locks, we might just 
@@ -557,10 +521,8 @@ static void update_coherence(struct inode * inode, int page, struct address_spac
     if(coherence_state == NULL){
         //page not in hashmap
         hash_shmem(inode_pages_address, mapping->host->i_ino, page, mapping, reqstate);
-	//pr_info("page not in hashmap adding with state %c", reqstate);
 
     }else{
-	//pr_info("page in hashmap, updating state %c", reqstate);
 
 	    if(coherence_state->state == WRITE){
 		    return;
@@ -633,7 +595,6 @@ do {
 static int simplefs_readpage(struct file *file, struct page *page)
 {
 
-	pr_info("CALLING READPAGE");
 
 	struct buffer_head bh;
 	uintptr_t inode_pages_address;
@@ -652,7 +613,6 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	//page is locked for write now should always be locked for write
 	//because we should always be updating the state when we get here
 
-	//pr_info("readpage ino %ld page %ld", mapping->host->i_ino, page->index);
         //TODO insert into shmem_states
 
 	bh.b_state = 0;
@@ -661,24 +621,18 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	set_buffer_mapped(&bh);
 	set_buffer_uptodate(&bh);
 
-	//pr_err("read page was %d\n", page);
 	// If this page doesn't have buffers yet, 
 	// 0 below is the index of this block in the page; always 0 here
 	// since this file system always has block size == page size.
 	map_buffer_to_page(page, &bh, 0);
-	//pr_err("map buffer to page");
 
 	SetPageUptodate(page);
-	//pr_err("set page up to date %d", PageUptodate(page));
 
 	BUG_ON(!PageUptodate(page));
 	
-	//pr_info("lock ac 2");
 
 	//spin_lock(&dummy_page_lock);
-	//pr_err("acquiring dummy page lock");
 	int cpu = get_cpu();
-	//pr_info("lock ac 3");
 	spin_lock(&cnthread_inval_send_ack_lock[cpu]);
 
 	// TODO(stutsman): Why are we bothering with per-cpu buffers if we have
@@ -688,10 +642,8 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	//void *buf = get_dummy_page_dma_addr(get_cpu());
 	void *buf = get_dummy_page_dma_addr(cpu);
 
-	//pr_err("got dummy buf addr %d", buf);
 
 	r = mind_fetch_page(inode_pages_address, buf, &data_size);
-	//pr_err("fetched page");
 
         BUG_ON(r);
 
@@ -699,7 +651,6 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	simplefs_kernel_page_write(page, get_dummy_page_buf_addr(cpu), PAGE_SIZE, 0);
 	//simplefs_kernel_page_write(page, buf, PAGE_SIZE, 0);
 
-	//pr_err("wrote page");
 
 	//adds page to hashmap if not already in hashmap
 	//update_coherence(mapping->host, page->index, mapping, READ);
@@ -744,23 +695,15 @@ int simple_block_write_full_page(struct page *page, get_block_t *get_block,
 			struct writeback_control *wbc)
 {
 
-	pr_info("writeback function called");
-	pr_info("writeback function called");
-	pr_info("writeback function called");
-	pr_info("writeback function called");
-	pr_info("writeback function called");
-	pr_info("writeback function called");
 
 	struct inode * const inode = page->mapping->host;
 	loff_t i_size = i_size_read(inode);
 	const pgoff_t end_index = i_size >> PAGE_SHIFT;
 	unsigned offset;
-	pr_info("block_write_full_page 1");
 	/* Is the page fully inside i_size? */
 	if (page->index < end_index)
 		return __block_write_full_page(inode, page, get_block, wbc,
 					       end_buffer_async_write);
-	pr_info("block_write_full_page 2");
 
 	/* Is the page fully outside i_size? (truncate in progress) */
 	offset = i_size & (PAGE_SIZE-1);
@@ -770,15 +713,12 @@ int simple_block_write_full_page(struct page *page, get_block_t *get_block,
 		 * they may have been added in ext3_writepage().  Make them
 		 * freeable here, so the page does not leak.
 		 */
-	pr_info("block_write_full_page 3");
 
 		simple_do_invalidatepage(page, 0, PAGE_SIZE);
-	pr_info("block_write_full_page 4");
 
 		unlock_page(page);
 		return 0; /* don't care */
 	}
-	pr_info("block_write_full_page 5");
 
 	/*
 	 * The page straddles i_size.  It must be zeroed out on each and every
@@ -788,7 +728,6 @@ int simple_block_write_full_page(struct page *page, get_block_t *get_block,
 	 * writes to that region are not written out to the file."
 	 */
 	zero_user_segment(page, offset, PAGE_SIZE);
-	pr_info("block_write_full_page 6");
 
 	return __block_write_full_page(inode, page, get_block, wbc,
 							end_buffer_async_write);
@@ -803,7 +742,6 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 
 	//probably fix by acquiring in write mode here and releasing 
 	//at end of this function
-	pr_info("simplefs_writepage");
 
 	//struct page_lock_status temp = acquire_page_lock(NULL, inode, currentpage, inode_pages_address, mapping, WRITE);
 
@@ -818,7 +756,6 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 //TODO changed this so that it doesn't need page pointer
 static bool invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page){
 
-	pr_info("invalidate_page_write 1");
         //struct page * testp = pagep;
         uintptr_t inode_pages_address;
         int r;
@@ -829,19 +766,16 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
         void *ptrdummy;
         static struct cnthread_inv_msg_ctx send_ctx;
         loff_t test = 20; 
-	//pr_info("invalidate_page_write 2");
 
         const struct address_space *mapping = file->f_mapping;
 
         inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (page));
 
 	int cpu_id = get_cpu();
-	//pr_info("lock ac 4");
 	
         //spin_lock(&dummy_page_lock);
 	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
-       	//pr_info("invalidate_page_write 3");
 
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(cpu_id);
@@ -851,7 +785,6 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
         temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
 
         ptrdummy = get_dummy_page_buf_addr(cpu_id);
-	//pr_info("invalidate_page_write 4");
 
         //writes data to that page
         //copy data into dummy buffer, and send to switch
@@ -859,16 +792,13 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
         
 	//int i;
         //for(i = 0; i < 20; i++){
-        //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
         //}
 
-	//pr_info("invalidate_page_write 5");
 
         //spin_lock(ptl_ptr);
 
         //cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
         //temppte, CN_OTHER_PAGE, 0, buf);
-        //pr_info("invalidate_page_write 6");
 
         //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
 
@@ -902,11 +832,6 @@ struct page *test_grab_cache_page_write_begin(struct address_space *mapping,
 	//lock_page(page);
 	
 	/*if (PageLocked(page)){
-		pr_err("PAGE WAS ALREADY LOCKED");
-		pr_err("PAGE WAS ALREADY LOCKED");
-		pr_err("PAGE WAS ALREADY LOCKED");
-		pr_err("PAGE WAS ALREADY LOCKED");
-		pr_err("PAGE WAS ALREADY LOCKED");
 	}else{
 		lock_page(page); //this appears to address the issue
 	}*/
@@ -919,15 +844,11 @@ int test_block_write_begin(struct address_space *mapping, loff_t pos, unsigned l
 	pgoff_t index = pos >> PAGE_SHIFT;
 	struct page *page;
 	int status;
-	//pr_info("before grabbing page from page cache");
 	page = test_grab_cache_page_write_begin(mapping, index, flags);
-	//pr_info("after grabbing page from page cache");
 	if (!page)
 		return -ENOMEM;
 
-	//pr_info("before block_write_begin");
 	status = __block_write_begin(page, pos, len, get_block);
-	//pr_info("after block_write_begin");
 	if (unlikely(status)) {
 		unlock_page(page);
 		put_page(page);
@@ -956,7 +877,6 @@ static int simplefs_write_begin(struct file *file,
 
 	    unsigned int currentpage = pos / PAGE_SIZE;
 	    unsigned int lastpage = (pos + len) / PAGE_SIZE;
-    //pr_info("write begin page number %d end page number %d, for inode %ld write pos %d  write length %d", currentpage, lastpage, (file->f_inode)->i_ino, pos, len);
 
 
     struct inode *inode = file->f_inode;
@@ -969,9 +889,7 @@ static int simplefs_write_begin(struct file *file,
     //actual page since it causes null dereference stuff
     //
    
-	//pr_info("before SIMPLEFS_SB");
     struct simplefs_sb_info *sbi = SIMPLEFS_SB(file->f_inode->i_sb);
-	//pr_info("after SIMPLEFS_SB");
 
     int err;
     uint32_t nr_allocs = 0;
@@ -1000,11 +918,9 @@ static int simplefs_write_begin(struct file *file,
     }*/
 
 
-    //pr_info("before block_write_begin");
     /* prepare the write */
     err = test_block_write_begin(mapping, pos, len, flags, pagep,
                             simplefs_file_get_block);
-    //pr_info("after block_write_begin");
     /* if this failed, reclaim newly allocated blocks */
     if (err < 0)
         pr_err("newly allocated blocks reclaim not implemented yet\n");
@@ -1038,10 +954,9 @@ static int simplefs_write_end(struct file *file,
     int ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
 
 
-    //pr_err("write end page was %d\n", page);
 
     if (ret < len) {
-        pr_err("wrote less than requested.");
+        //pr_err("wrote less than requested.");
 	//TODO perform coherence on multiple pages
 
 
@@ -1119,7 +1034,6 @@ end:
 static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
                 struct iov_iter *iter, ssize_t written)
 {
-        //pr_info("inside simplefs_generic_file_buffered_read\n");
         struct file *filp = iocb->ki_filp;
         struct address_space *mapping = filp->f_mapping;
         struct inode *inode = mapping->host;
@@ -1144,21 +1058,18 @@ static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
 
         for (;;) {
                 struct page *page;
-                //pr_info("looping page index %d offset %d\n", index, offset);
                 pgoff_t end_index;
                 loff_t isize;
                 unsigned long nr, ret;
 
                 cond_resched();
 find_page:
-                //pr_info("find page\n");
 
                 page = find_get_page(mapping, index);
                 //ClearPageUptodate(page);
 
 
                 if (!page) {
-                        //pr_info("no page found from findgetpage\n");
                         if (iocb->ki_flags & IOCB_NOWAIT)
                                 goto would_block;
                         page_cache_sync_readahead(mapping,
@@ -1168,16 +1079,13 @@ find_page:
                         if (unlikely(page == NULL))
                                 goto no_cached_page;
                 }
-                //pr_info("page found is %d\n", page);
                 if (PageReadahead(page)) {
-                        //pr_info("sync readahead\n");
                         page_cache_async_readahead(mapping,
                                         ra, filp, page,
                                         index, last_index - index);
 
                 }
                 if (!PageUptodate(page)) {
-                        //pr_info("page not up to date\n");
                         if (iocb->ki_flags & IOCB_NOWAIT) {
                                 put_page(page);
                                 goto would_block;
@@ -1210,12 +1118,9 @@ find_page:
                                 goto page_not_up_to_date_locked;
                         unlock_page(page);
                 }else if (PageLocked(page)){
-			pr_info("PAGE UP TO DATE BUT STILL LOCKED");
 
 		}
-                //pr_info("page was marked up to date\n");
 page_ok:
-                //pr_info("page_ok \n");
                 /*
                  * i_size must be checked after we know the page is Uptodate.
                  *
@@ -1225,11 +1130,9 @@ page_ok:
                  * another truncate extends the file - this is desired though).
                  */
 
-               	pr_info("page ok i_size_read"); 
 		isize = i_size_read(inode);
                 end_index = (isize - 1) >> PAGE_SHIFT;
                 if (unlikely(!isize || index > end_index)) {
-                        //pr_info("size difference\n");
                         put_page(page);
                         goto out;
                 }
@@ -1240,7 +1143,6 @@ page_ok:
 
                         nr = ((isize - 1) & ~PAGE_MASK) + 1; //inode size (8kb? - 1)
                         if (nr <= offset) { //if nr <= offset into page
-                                //pr_info("offset not right nr was %d offset %d isize %d\n", nr, offset, isize);
                                 put_page(page);
                                 goto out;
                         }
@@ -1266,12 +1168,9 @@ page_ok:
                  * Ok, we have the page, and it's up-to-date, so
                  * now we can copy it to user space...
                  */
-                //pr_info("data being copied to page here \n");
 		int is_locked = PageLocked(page);
-		//pr_info("during data copy page locked status %d\n", is_locked);
 
 		is_locked = rwsem_is_locked(&(page->mapping->host->i_rwsem));	
-		//pr_info("inode locked status during read is %d\n", is_locked);
 
 
                 ret = copy_page_to_iter(page, offset, nr, iter);
@@ -1291,14 +1190,12 @@ page_ok:
                 continue;
 
 page_not_up_to_date:
-                //pr_info("page not up to date\n");
                 /* Get exclusive access to the page ... */
                 error = lock_page_killable(page);
                 if (unlikely(error))
                         goto readpage_error;
 
 page_not_up_to_date_locked:
-                //pr_info("page not up to date locked\n");
                 /* Did it get truncated before we got the lock? */
                 if (!page->mapping) {
                         unlock_page(page);
@@ -1321,18 +1218,14 @@ readpage:
                 ClearPageError(page);
                 /* Start the actual read. The read will unlock the page. */
                 error = mapping->a_ops->readpage(filp, page);
-                //pr_info("after readpage called \n");
-                //pr_info("going to page_ok\n");
                 goto page_ok;
 
 readpage_error:
-                //pr_info("read page error \n");
                 /* UHHUH! A synchronous read error occurred. Report it */
                 put_page(page);
                 goto out;
 
 no_cached_page:
-                //pr_info("no cached page \n");
                 /*
                  * Ok, it wasn't cached, so we need to create a new
                  * page..
@@ -1356,7 +1249,6 @@ no_cached_page:
         }
 
 would_block:
-        //pr_info("would_block\n");
         error = -EAGAIN;
 out:
         ra->prev_pos = prev_index;
@@ -1365,7 +1257,6 @@ out:
 
         *ppos = ((loff_t)index << PAGE_SHIFT) + offset;
         file_accessed(filp);
-        //pr_info("leaving generic_file_buffered_read\n");
         return written ? written : error;
 }
 
@@ -1385,7 +1276,6 @@ simplefs_generic_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
                 struct inode *inode = mapping->host;
                 loff_t size;
 
-		pr_info("file read iter direct i_size_read");
                 size = i_size_read(inode);
                 if (iocb->ki_flags & IOCB_NOWAIT) {
                         if (filemap_range_has_page(mapping, iocb->ki_pos,
@@ -1440,10 +1330,8 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	int pageindex;
 
 
-	//pr_info("read ki_pos %d", iocb->ki_pos);
 
 
-	//pr_info("read ki_pos %d", iocb->ki_pos);
 	//up here to avoid deadlock
 	//TODO rewrite the kernel_read function 
 	//so that it doesn't go back into the
@@ -1462,29 +1350,23 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	unsigned int last_index = (*ppos + iter->count + PAGE_SIZE-1) >> PAGE_SHIFT; 
 	unsigned int offset = *ppos & ~PAGE_MASK;	
 	unsigned int count_test = iter->count;
-	//pr_info("**********index is %d last index is %d offset is %d count is %d", index, last_index, offset, count_test);
 
 
-	//pr_info("*****beginning read inode %d page %d", inode->i_ino, index);
 
 	//invalidating the page
 	//callinvalidatepage(inode->i_ino, index, 1);
 
 	/*
 	for(pageindex = index; pageindex <= last_index; pageindex++){
-                pr_info("page index attempting to invalidate is %d\n", pageindex);
                 struct page *page = find_get_page(mapping, index);
-                pr_info("getting page pointer in file read iter %d\n", page);
                 if(page != 0){
                         //ClearPageUptodate(page);
-                        pr_info("marking page %d out of date\n", pageindex);
                 }
         }
 	*/
 
 	retval = simplefs_generic_file_read_iter(iocb, iter);
 
-   	//pr_info("**** reading into vector type %d, length %d ki_flags %d ki_hint %d nr_segs %d ki_pos %d", iter->type, (iter->iov)->iov_len, iocb->ki_flags, iocb->ki_flags, iocb->ki_hint, iter->nr_segs, iocb->ki_pos);
 
 	//**** reading into vector type 0, length 8192 ki_flags 0 ki_hint 0 nr_segs 0 ki_pos 1
 
@@ -1498,7 +1380,6 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 	/*      ~*~       */
 	//inode_unlock(inode);
 	/*      ~*~       */
-	//pr_info("****ending read");
 	return retval;
 
 }
@@ -1509,25 +1390,13 @@ simplefs_file_read_iter(struct kiocb *iocb, struct iov_iter *iter)
 u64 page_shmem_address_check(void *addr, unsigned long size)
 {
 
-    //pr_info("tesing shmem address callback");
-    //pr_info("tesing shmem address callback");
-    //pr_info("tesing shmem address callback");
-    //pr_info("shmem address callback %ld", addr);
-    //pr_info("shmem address callback 0x%lx", addr);
-
 	//TODO this should be surrounded by locks
     down_read(&hash_page_rwsem);
     struct  shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
     up_read(&hash_page_rwsem);
     if(coherence_state != NULL){
-	    //pr_info("shmem was in hash table");
-	    //pr_info("shmem address %ld", coherence_state->shmem_addr);
-	    //pr_info("shmem i_ino %d", coherence_state->i_ino);
-	    //pr_info("shmem pagenum %d", coherence_state->pagenum);
-	    //pr_info("shmem coherence state %d", coherence_state->state);
 	    return 1;
     }else{
-	    //pr_info("shmem was not in the hashtable");
     }
 	
     return 0;
@@ -1553,7 +1422,6 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 	int cpu_id = get_cpu();
 	
         //spin_lock(&dummy_page_lock);
-	pr_info("lock ac 5");
 
         spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
@@ -1569,18 +1437,15 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         //writes data to that page
         //copy data into dummy buffer, and send to switch
 	if(testp == NULL){	
-		pr_info("WHAT SHOULD WE DO IN THIS CASE?");
 	}else{
         	simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), PAGE_SIZE, &test);
 	}
 
         //for(i = 0; i < 20; i++){
-        //        pr_info("testing invalidate write %c", ((char*)get_dummy_page_buf_addr(get_cpu()))[i]);
         //}
 
 
         //spin_lock(ptl_ptr);
-	//pr_info("inside ptl_ptr lock");
 
 	struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
         struct cnthread_inv_msg_ctx *inv_ctx = &((struct cnthread_inv_argv *)inv_argv)->inv_ctx;
@@ -1590,24 +1455,15 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
         *((u32 *)(&(inv_ctx->inval_buf[CACHELINE_ROCE_VOFFSET_TO_IP]))) = rdma_ctx->ip_val;
 
-	//pr_info("inv_ctx->original_qp %d", inv_ctx->original_qp);
 	
 	u32 req_qp = (get_id_from_requester(inv_ctx->rdma_ctx.requester) * DISAGG_QP_PER_COMPUTE) + inv_ctx->original_qp;
-        //pr_info("req_qp %d", req_qp);
 	
-	//pr_info("before cn_copy_page");
 	cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
         temppte, CN_TARGET_PAGE, req_qp, buf);
-        //pr_info("after cn_copy_page");
 	
-	//pr_info("before inval ack");
-	//pr_info("inv_ctx->inval_buf %d", inv_ctx->inval_buf);
         _cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
-        //pr_info("after inval ack");
         
-	//pr_info("before FinACK");
         cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
-        //pr_info("after FinACK");
 	
 	//spin_unlock(ptl_ptr);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
@@ -1619,7 +1475,6 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
 
 static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, void *inv_argv){
 
-	pr_info("shmem invalidate");
 	void *pagep;
 
 	//acquire write lock on page
@@ -1630,7 +1485,6 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 	//spin_lock(&shmem_states_lock);
 
 	//lock page tree
-	//pr_info("lock ac 6");
 
 	//spin_lock_irq(&mapping->tree_lock);
 
@@ -1654,7 +1508,6 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		delete_from_page_cache(testp);
 
 	}else{
-		pr_info("ERROR page no longer in page cache");
 		struct page * testp = NULL;
 		//this can also be reached if something has been truncated
 		shmem_invalidate_page_write(coherence_state->mapping, testp, coherence_state->pagenum, inv_argv);
@@ -1674,7 +1527,6 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 
 u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
-    pr_info("invalidate page callback called address %ld", addr);
 
 
     down_read(&hash_page_rwsem);
@@ -1688,7 +1540,6 @@ u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    up_write(&(coherence_state->rwsem)); //lock the page
     }else{
 	    up_read(&hash_page_rwsem);
-	    pr_info("ERROR memory wasn't ours");
 
     }
 
@@ -1737,22 +1588,17 @@ again:
 			break;
 		}
 
-		//pr_err("before changes");
 		//do locking stuff here
 		unsigned int currentpage = pos / PAGE_SIZE;
 		struct inode * inode = mapping->host;
-		//pr_err("after inode pointer");	
-		//pr_err("page index is %d", currentpage);
 		uintptr_t inode_pages_address;
 		inode_pages_address = shmem_address[inode->i_ino] +
 			(PAGE_SIZE * (currentpage));
 
-		//pr_err("after inode page address");
 
 
 		struct page_lock_status temp = acquire_page_lock(file, inode, currentpage, inode_pages_address, mapping, WRITE);
 		//if page lock was acquired in write mode, then we have to update the remote state
-		//pr_err("after acquire page lock");
 
 		//need to copy in the most up to date version of the page
 
@@ -1763,24 +1609,21 @@ again:
 						&page, &fsdata);
 
 		if (unlikely(status < 0)){
-			pr_err("status was less than zero");
+			//pr_err("status was less than zero");
 
 			break;
 		}
 
 		if (mapping_writably_mapped(mapping)){
-			pr_err("writably mapped?");
+			//pr_err("writably mapped?");
 			flush_dcache_page(page);
 
 		}
-		//pr_err("done with potential issues");
 
 		//request access to the page here
 		if(temp.old_state < READ){
-			pr_info("UPDATING PAGE DATA BEFORE APPEND");
 
 			//request in read mode, and copy the data over
-			//pr_info("lock ac 7");
 			int cpu_id = get_cpu();
 
 			spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
@@ -1936,7 +1779,6 @@ ssize_t simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *fr
 	ssize_t ret;
 
 	inode_lock(inode);
-	//pr_info("write iter i_size_read");
 	i_size_read(inode); 
 
 	ret = generic_write_checks(iocb, from);
