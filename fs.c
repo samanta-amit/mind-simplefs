@@ -27,7 +27,8 @@ unsigned long inode_size_address[10];
 unsigned int inode_size_status[10];
 unsigned long size_lock_address;
 unsigned long inode_lock_address;
-unsigned long combined_address[32];
+unsigned long new_inode_lock_address[10];
+unsigned long combined_address[42];
 static int readAddress = 0;
 //https://lynxbee.com/passing-command-line-arguments-parameters-to-linux-kernel-module/#.ZAUI5oDMKCg
 //https://tldp.org/LDP/lkmpg/2.4/html/x354.htm (also used this for printing longs)
@@ -134,6 +135,8 @@ static int __init simplefs_init(void)
 	}
 
 
+
+
 	pr_info("single print inode size addresses %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld", inode_size_address[0],
 			inode_size_address[1],
 			inode_size_address[2],
@@ -144,6 +147,26 @@ static int __init simplefs_init(void)
 			inode_size_address[7],
 			inode_size_address[8],
 			inode_size_address[9]
+	       );
+
+	pr_info("new inode lock addresses:");
+	for(i = 0; i < 10; i++){
+		new_inode_lock_address[i] = (uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
+		pr_info("%ld, ", new_inode_lock_address[i]);
+	}
+
+	pr_info("single print new inode size addresses %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld, %ld", 
+			new_inode_lock_address[0],
+			new_inode_lock_address[1],
+			new_inode_lock_address[2],
+			new_inode_lock_address[3],
+			new_inode_lock_address[4],
+			new_inode_lock_address[5],
+			new_inode_lock_address[6],
+			new_inode_lock_address[7],
+			new_inode_lock_address[8],
+			new_inode_lock_address[9]
+
 	       );
 
 
@@ -165,7 +188,9 @@ static int __init simplefs_init(void)
 	    }
 	    size_lock_address = combined_address[30];
 	    inode_lock_address = combined_address[31];
-
+	    for(i = 32; i < 42; i++){
+		new_inode_lock_address[i-32] = combined_address[i];
+	    }
 
 
 	    pr_info("read addresses:");
@@ -186,6 +211,11 @@ static int __init simplefs_init(void)
             pr_info("inode size addresses:");
             for(i = 0; i < 10; i++){
                     pr_info("%ld, ", inode_size_address[i]);
+            }
+
+            pr_info("new inode lock addresses:");
+            for(i = 0; i < 10; i++){
+                    pr_info("%ld, ", new_inode_lock_address[i]);
             }
             pr_info("\n");
 

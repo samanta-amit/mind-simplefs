@@ -1443,15 +1443,15 @@ void lock_loop(int ino){
 		int i = 0;
 
 		//down_write(&testsem);
-		//pr_info("lock ac 15");
+		pr_info("lock ac 15");
 
 		spin_lock(&remote_inode_lock);  
 
-		//pr_info("got lock, status was %d", remote_lock_status);
+		pr_info("got lock, status was %d", remote_lock_status);
 		if(remote_lock_status == 2){
 			return;
 		}else{
-			//pr_info("upgrading lock status result");
+			pr_info("upgrading lock status result");
 
 			bool acquired = get_remote_lock_access(0, inode_lock_address);
 			if(!acquired){
