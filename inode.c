@@ -56,7 +56,7 @@ static const struct inode_operations symlink_inode_ops;
 extern unsigned long shmem_address[10];
 extern unsigned long inode_address[10];
 extern unsigned long size_lock_address; 
-extern unsigned long inode_lock_address[10]; 
+extern unsigned long inode_lock_address; 
 extern unsigned long inode_size_address[10];
 extern unsigned int inode_size_status[10];
 extern struct super_block * super_block;
@@ -379,7 +379,7 @@ extern unsigned long inode_lock_address;
 	}
 
 	//for(i = 0; i < 10; i++){
-		if(addr == inode_lock_address[0]){
+		if(addr == inode_lock_address){
 			return 1;
 		}
 	//}
@@ -436,9 +436,9 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
     }
 
     //for(i = 0; i < 10; i++){    
-	    if(addr == inode_lock_address[0]){
+	    if(addr == inode_lock_address){
 		    spin_lock(&remote_inode_lock);  
-		    invalidate_lock_write(0, inv_argv, inode_lock_address[0]);
+		    invalidate_lock_write(0, inv_argv, inode_lock_address);
 
 		    //downgrade copy (need to separate for invalid and shared)
 		    remote_lock_status[i] = 0;
@@ -1387,7 +1387,7 @@ void lock_loop(int ino){
 			return;
 		}else{
 
-			bool acquired = get_remote_lock_access(0, inode_lock_address[0]);
+			bool acquired = get_remote_lock_access(0, inode_lock_address);
 			if(!acquired){
 				spin_unlock(&remote_inode_lock);
 				continue; //force retry
