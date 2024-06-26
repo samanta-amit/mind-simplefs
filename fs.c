@@ -160,12 +160,13 @@ static int __init simplefs_init(void)
 	    	inode_address[i-10] = combined_address[i];
 	    }
 
-	    size_lock_address = combined_address[20];
-	    inode_lock_address = combined_address[21];
-
-	    for(i = 22; i < 31; i++){
-		inode_size_address[i-22] = combined_address[i];
+	    for(i = 20; i < 30; i++){
+		inode_size_address[i-20] = combined_address[i];
 	    }
+	    size_lock_address = combined_address[30];
+	    inode_lock_address = combined_address[31];
+
+
 
 	    pr_info("read addresses:");
 	    for(i = 0; i < 10; i++){
