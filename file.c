@@ -807,11 +807,11 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 
 	//struct page_lock_status temp = acquire_page_lock(NULL, inode, currentpage, inode_pages_address, mapping, WRITE);
 
-	return simple_block_write_full_page(page, simplefs_file_get_block, wbc);
+	//return simple_block_write_full_page(page, simplefs_file_get_block, wbc);
 
 	//hack to try and prevent problems with page writeback	
-	//unlock_page(page);
-	//return 0; 
+	unlock_page(page);
+	return 0; 
 }
 
 
@@ -1225,7 +1225,7 @@ page_ok:
                  * another truncate extends the file - this is desired though).
                  */
 
-               	pr_info("page ok i_size_read"); 
+               	//pr_info("page ok i_size_read"); 
 		isize = i_size_read(inode);
                 end_index = (isize - 1) >> PAGE_SHIFT;
                 if (unlikely(!isize || index > end_index)) {
@@ -1642,17 +1642,18 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		
 		//radix_tree_lookup(&mapping->page_tree, coherence_state->pagenum);
 	if(pagep){
-		lock_page(pagep);
+		//lock_page(pagep);
 		struct page * testp = pagep;
 		
 		//perform page invalidation stuff here
 		shmem_invalidate_page_write(coherence_state->mapping, testp, coherence_state->pagenum, inv_argv);
 		//delete_from_page_cache(testp);
-		//ClearPageUptodate(testp);
-		ClearPageDirty(testp);
+		ClearPageUptodate(testp);
+		//ClearPageDirty(testp);
+		//SetPageError(testp);
 		coherence_state->state = 0;
-		delete_from_page_cache(testp);
-
+		//delete_from_page_cache(testp);
+		//unlock_page(pagep);
 	}else{
 		pr_info("ERROR page no longer in page cache");
 		struct page * testp = NULL;

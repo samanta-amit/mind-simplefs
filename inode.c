@@ -56,7 +56,9 @@ static const struct inode_operations symlink_inode_ops;
 extern unsigned long shmem_address[10];
 extern unsigned long inode_address[10];
 extern unsigned long size_lock_address; 
-extern unsigned long inode_lock_address; 
+//extern unsigned long inode_lock_address; 
+extern unsigned long new_inode_lock_address[10];
+
 extern unsigned long inode_size_address[10];
 extern unsigned int inode_size_status[10];
 extern struct super_block * super_block;
@@ -426,9 +428,11 @@ extern unsigned long inode_lock_address;
 		return 1;
 	}
 
-	if(addr == inode_lock_address){
-		//pr_info("address found was inode lock");
-		return 1;
+	for(i = 0; i < 10; i++){
+		if(addr == new_inode_lock_address[i]){
+			//pr_info("address found was inode lock");
+			return 1;
+		}
 	}
 
 	//check to see if this is a page address
@@ -488,26 +492,27 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 
 	    return 1;
     }
-	
-    if(addr == inode_lock_address){
-	    //pr_info("address callback was inode lock");
-		pr_info("lock ac 14");
-	spin_lock(&remote_inode_lock);  
-	invalidate_lock_write(0, inv_argv, inode_lock_address);
 
-	/*pr_info("RECEIVED INVALIDATION");
-	pr_info("RECEIVED INVALIDATION");
-	pr_info("RECEIVED INVALIDATION");
-	pr_info("RECEIVED INVALIDATION");
-	pr_info("RECEIVED INVALIDATION");
-*/
-	//downgrade copy (need to separate for invalid and shared)
-	remote_lock_status = 0;
-    	//removed to test for deadlock
-	spin_unlock(&remote_inode_lock);  
-	return 1;
+    for(i = 0; i < 10; i ++){    
+	    if(addr == new_inode_lock_address[i]){
+		    //pr_info("address callback was inode lock");
+		    pr_info("lock ac 14");
+		    spin_lock(&remote_inode_lock);  
+		    invalidate_lock_write(0, inv_argv, new_inode_lock_address[i]);
+
+		    /*pr_info("RECEIVED INVALIDATION");
+		      pr_info("RECEIVED INVALIDATION");
+		      pr_info("RECEIVED INVALIDATION");
+		      pr_info("RECEIVED INVALIDATION");
+		      pr_info("RECEIVED INVALIDATION");
+		      */
+		    //downgrade copy (need to separate for invalid and shared)
+		    remote_lock_status = 0;
+		    //removed to test for deadlock
+		    spin_unlock(&remote_inode_lock);  
+		    return 1;
+	    }
     }
-
     //do page sync (in file.c)
     page_testing_invalidate_page_callback(addr, inv_argv);
 
@@ -1453,7 +1458,7 @@ void lock_loop(int ino){
 		}else{
 			pr_info("upgrading lock status result");
 
-			bool acquired = get_remote_lock_access(0, inode_lock_address);
+			bool acquired = get_remote_lock_access(0, new_inode_lock_address[i]);
 			if(!acquired){
 				spin_unlock(&remote_inode_lock);
 				continue; //force retry
@@ -1576,6 +1581,7 @@ pr_info("INODE LOCK NESTED CALLED");
 pr_info("******INODE LOCK NESTED CALLED");
 
 	down_write_nested(&inode->i_rwsem, subclass);
+	lock_loop(inode->i_ino);
 
 }
 
@@ -1895,6 +1901,7 @@ static const struct inode_operations simplefs_inode_ops = {
     .rename = simplefs_rename,
     .link = simplefs_link,
     .symlink = simplefs_symlink,
+    
     .dfs_inode_lock = simple_dfs_inode_lock,
     .dfs_inode_unlock = simple_dfs_inode_unlock,
     .dfs_i_size_read = simple_i_size_read,
@@ -1908,6 +1915,7 @@ static const struct inode_operations simplefs_inode_ops = {
     .inode_down_read_killable = simple_inode_down_read_killable,
     .inode_down_write_killable = simple_inode_down_write_killable, 
     .setattr = dfs_setattr, //don't need this since setattr uses i_size_write when truncating
+ 	  
     //getattr also just uses i_size_read
 
 

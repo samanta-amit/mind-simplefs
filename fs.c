@@ -76,7 +76,8 @@ static int __init simplefs_init(void)
     set_shmem_address_check(shmem_address_check);
     int i;
     int ret;
-    u64 alloc_size = sizeof(6 * PAGE_SIZE);
+    u64 page_alloc_size = sizeof(4 * PAGE_SIZE);
+    u64 alloc_size = sizeof(4 * PAGE_SIZE);
 
     pr_info("loading simplefs\n");
     pr_info("value of readAddress %d", readAddress);
@@ -85,7 +86,7 @@ static int __init simplefs_init(void)
     if(!readAddress){
 	    pr_info("addresses:");
 	    for(i = 0; i < 10; i++){
-		    shmem_address[i] = (uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
+		    shmem_address[i] = (uintptr_t)alloc_kshmem(page_alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
 		    pr_info("%ld, ", shmem_address[i]);
 	    }
             
@@ -151,7 +152,8 @@ static int __init simplefs_init(void)
 
 	pr_info("new inode lock addresses:");
 	for(i = 0; i < 10; i++){
-		new_inode_lock_address[i] = (uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
+		new_inode_lock_address[i] = inode_address[i];
+		//new_inode_lock_address[i] = (uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
 		pr_info("%ld, ", new_inode_lock_address[i]);
 	}
 
@@ -188,8 +190,9 @@ static int __init simplefs_init(void)
 	    }
 	    size_lock_address = combined_address[30];
 	    inode_lock_address = combined_address[31];
-	    for(i = 32; i < 42; i++){
-		new_inode_lock_address[i-32] = combined_address[i];
+	    for(i = 0; i < 10; i++){
+		//new_inode_lock_address[i-32] = combined_address[i];
+		new_inode_lock_address[i] = inode_address[i];
 	    }
 
 
