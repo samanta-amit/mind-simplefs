@@ -187,7 +187,7 @@ static int __init simplefs_init(void)
 	    for(i = 30; i < 40; i++){
 		inode_lock_address[i-30] = combined_address[i];
 	    }
-	    size_lock_address = combined_address[41];
+	    size_lock_address = combined_address[40];
 
 
 	    pr_info("read addresses:");
