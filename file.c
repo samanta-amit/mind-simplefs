@@ -66,7 +66,7 @@ struct shmem_coherence_state {
 	struct rw_semaphore rwsem;
 };
 
-struct rw_semaphore hash_page_rwsem;
+extern struct rw_semaphore hash_page_rwsem;
 
 DEFINE_HASHTABLE(shmem_states, 8); // 8 = 256 buckets
 // Protects shmem_states and everything it references.
@@ -89,6 +89,7 @@ static void hash_shmem(unsigned long shmem_addr, int inodenum, int pagenum, stru
 	//init the page lock
 	init_rwsem(&(shmem_state->rwsem));
 
+	pr_info("hash_shmem down_write test");
 	//acquire the page in readmode	
 	down_write(&(shmem_state->rwsem));
 
@@ -161,6 +162,7 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 		up_read(&hash_page_rwsem);
 
 		//acquire hashtable in write mode to add the new page
+		pr_info("hash page rwsem down write");	
 		down_write(&hash_page_rwsem);
 		table_write_locked = 2;
 
@@ -188,6 +190,8 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 		}else{
 			//pr_err("page %d was now found in hashtable", currentpage);
 			//could think about acquiring it in read mode and doing the jumping around thing again
+		
+			pr_info("coherence state down write found");	
 			down_write(&(coherence_state->rwsem));
 			page_write_locked = 1;
 			old_state = coherence_state->state;	
@@ -201,6 +205,7 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 		}
 		up_write(&hash_page_rwsem);
 	}else{
+		pr_info("right above coherence_state->rwsem");
 		down_write(&(coherence_state->rwsem));
 		page_write_locked = 1;
 		//pr_err("page %d was found in hashtable", currentpage);
@@ -1642,7 +1647,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		
 		//radix_tree_lookup(&mapping->page_tree, coherence_state->pagenum);
 	if(pagep){
-		//lock_page(pagep);
+		lock_page(pagep);
 		struct page * testp = pagep;
 		
 		//perform page invalidation stuff here
@@ -1653,7 +1658,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		//SetPageError(testp);
 		coherence_state->state = 0;
 		//delete_from_page_cache(testp);
-		//unlock_page(pagep);
+		unlock_page(pagep);
 	}else{
 		pr_info("ERROR page no longer in page cache");
 		struct page * testp = NULL;
@@ -1683,6 +1688,7 @@ u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv)
 
     if(coherence_state != NULL){
 
+	    pr_info("invalidate page callback down write");
 	    down_write(&(coherence_state->rwsem)); //lock the page
 	    up_read(&hash_page_rwsem); //unlock the hashtable now
 	    shmem_invalidate(coherence_state, inv_argv);
@@ -1692,7 +1698,7 @@ u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    pr_info("ERROR memory wasn't ours");
 
     }
-
+   pr_info("end of invalidate page callback");
     return 1024;
 }
 

@@ -72,7 +72,8 @@ struct rw_semaphore testlock;
 DEFINE_SPINLOCK(remote_inode_lock);
 
 int remote_lock_status = 0; //0 not held, 1 read mode, 2 write mode
-DEFINE_SPINLOCK(size_lock);
+extern struct rw_semaphore size_locks[10];
+//DEFINE_SPINLOCK(size_lock);
 int remote_size_status = 0; //0 not held, 1 read mode, 2 write mode
 
 //this is protected by the testsem
@@ -221,7 +222,7 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
 
 
 static bool invalidate_size_write(struct inode * inode, int inode_ino, void *inv_argv){
-
+	pr_info("invalidate size write");
         uintptr_t inode_pages_address;
         int r;
         struct mm_struct *mm;
@@ -247,10 +248,16 @@ static bool invalidate_size_write(struct inode * inode, int inode_ino, void *inv
         //r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
         //BUG_ON(r);
 
+	pr_info("invalidate size write ensure pte");
         temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
 
+	pr_info("invalidate size write get dummy buf");
         ptrdummy = get_dummy_page_buf_addr(cpu_id);
-
+	if(temppte == NULL){	
+		pr_info("WHAT SHOULD WE DO IN THIS CASE?");
+	}else{
+        	//simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), PAGE_SIZE, &test);
+	}
         //writes data to that page
         //copy data into dummy buffer, and send to switch
         //simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(get_cpu()), PAGE_SIZE, &test);
@@ -279,7 +286,9 @@ static bool invalidate_size_write(struct inode * inode, int inode_ino, void *inv
 	
 	rdma_ctx = &inv_ctx->rdma_ctx;
 	inv_ctx->original_qp = (rdma_ctx->ret & CACHELINE_ROCE_RKEY_QP_MASK) >> CACHELINE_ROCE_RKEY_QP_SHIFT;
-        create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
+       
+      	pr_info("size invalidation create invalidation rdma ack"); 
+	create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
         *((u32 *)(&(inv_ctx->inval_buf[CACHELINE_ROCE_VOFFSET_TO_IP]))) = rdma_ctx->ip_val;
 
 	//pr_info("inv_ctx->original_qp %d", inv_ctx->original_qp);
@@ -288,16 +297,17 @@ static bool invalidate_size_write(struct inode * inode, int inode_ino, void *inv
         //pr_info("req_qp %d", req_qp);
 	
 	//pr_info("before cn_copy_page");
+      	pr_info("size invalidation copy page to mn"); 
 	cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
         temppte, CN_TARGET_PAGE, req_qp, buf);
         //pr_info("after cn_copy_page");
 	
-	//pr_info("before inval ack");
+	pr_info("size invalidation before inval ack");
 	//pr_info("inv_ctx->inval_buf %d", inv_ctx->inval_buf);
         _cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
         //pr_info("after inval ack");
         
-	//pr_info("before FinACK");
+	pr_info("size invalidation before FinACK");
         cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
         //pr_info("after FinACK");
 
@@ -469,13 +479,13 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 			struct inode * inode = ilookup(super_block, i);
 			//while(spin_trylock(&size_lock) == 0){
 			//}
-			spin_lock(&size_lock);
+			down_write(&size_locks[i]);
 			time = current_kernel_time();
 			pr_info("acquire lock time is %ld", time.tv_sec); 
 	
 			invalidate_size_write(inode, i, inv_argv);
 			inode_size_status[i] = 0;
-			spin_unlock(&size_lock);  
+			up_write(&size_locks[i]);  
 			//unlock_inode(inode);	don't need since we don't acquire locked version
 			time = current_kernel_time();
 			pr_info("end time is %ld", time.tv_sec); 
@@ -1677,7 +1687,7 @@ int size_loop(int ino){
 		//pr_info("lock ac 17");
 		//while(spin_trylock(&size_lock) == 0){
 		//}
-		//spin_lock(&size_lock);	
+		down_write(&size_locks[ino]);	
 		
 		//pr_info("got lock, status was %d", inode_size_status[ino]);
 		//pr_info("inode size for inode address %d is %d", ino, inode_size_address[ino]);
@@ -1688,9 +1698,11 @@ int size_loop(int ino){
 
 			int result = get_remote_size_access(ino);
 			if(result == -1){
-				//spin_unlock(&size_lock);
+				up_write(&size_locks[ino]);
 				pr_info("retrying size loop");
-				continue; //force retry
+				BUG_ON(1);
+				return -1; //force retry
+				continue;
 			}
 			inode_size_status[ino] = 2; //write
 
@@ -1716,7 +1728,7 @@ loff_t simple_i_size_read(const struct inode *inode){
 	if(inode->i_ino != 0){
 	//	pr_info("reading i_size for inode %d", inode->i_ino);
 		int size = -1;
-		spin_lock(&size_lock);
+		//spin_lock(&size_lock);
 		
 
 		size = size_loop(inode->i_ino);	
@@ -1725,7 +1737,7 @@ loff_t simple_i_size_read(const struct inode *inode){
 			//this means that we already have access
 			loff_t temp = inode->i_size;
 	//		pr_info("already had size access size was %d", temp);
-			spin_unlock(&size_lock);  
+			up_write(&size_locks[inode->i_ino]);  
 
 			return temp; 
 		}else{
@@ -1738,7 +1750,7 @@ loff_t simple_i_size_read(const struct inode *inode){
 	//		pr_info("old size%d", temp);
 			non_const_inode->i_size = size;
 			temp = non_const_inode->i_size;
-			spin_unlock(&size_lock);  
+			up_write(&size_locks[inode->i_ino]);  
 			return temp; 
 
 		}
@@ -1776,7 +1788,7 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 
 	if(inode->i_ino != 0){
 	//pr_info("writing i_size for inode %d", inode->i_ino);
-		spin_lock(&size_lock);
+		//spin_lock(&size_lock);
 		int size = -1;
 		size = size_loop(inode->i_ino);	
 		//lock acquired in size loop
@@ -1784,12 +1796,12 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 			//this means that we already have access
 			//pr_info("already had size access");
 			inode->i_size = i_size;
-			spin_unlock(&size_lock);  
+			up_write(&size_locks[inode->i_ino]);  
 			return; 
 		}else{
 			//pr_info("gained size access");
 			inode->i_size = i_size;
-			spin_unlock(&size_lock);  
+			up_write(&size_locks[inode->i_ino]);  
 			return; 
 
 		}
@@ -1901,11 +1913,13 @@ static const struct inode_operations simplefs_inode_ops = {
     .rename = simplefs_rename,
     .link = simplefs_link,
     .symlink = simplefs_symlink,
+
     
-    .dfs_inode_lock = simple_dfs_inode_lock,
-    .dfs_inode_unlock = simple_dfs_inode_unlock,
+//    .dfs_inode_lock = simple_dfs_inode_lock,
+ //   .dfs_inode_unlock = simple_dfs_inode_unlock,
     .dfs_i_size_read = simple_i_size_read,
     .dfs_i_size_write = simple_i_size_write,
+    /*
     .dfs_inode_lock_shared = simple_dfs_inode_lock_shared,
     .dfs_inode_unlock_shared = simple_dfs_inode_unlock_shared,
     .dfs_inode_trylock = simple_dfs_inode_trylock,
@@ -1915,7 +1929,7 @@ static const struct inode_operations simplefs_inode_ops = {
     .inode_down_read_killable = simple_inode_down_read_killable,
     .inode_down_write_killable = simple_inode_down_write_killable, 
     .setattr = dfs_setattr, //don't need this since setattr uses i_size_write when truncating
- 	  
+ */	  
     //getattr also just uses i_size_read
 
 

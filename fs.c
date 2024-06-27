@@ -29,6 +29,10 @@ unsigned long size_lock_address;
 unsigned long inode_lock_address;
 unsigned long new_inode_lock_address[10];
 unsigned long combined_address[42];
+//struct spinlock_t size_locks[10];
+struct rw_semaphore size_locks[10];
+struct rw_semaphore hash_page_rwsem;
+
 static int readAddress = 0;
 //https://lynxbee.com/passing-command-line-arguments-parameters-to-linux-kernel-module/#.ZAUI5oDMKCg
 //https://tldp.org/LDP/lkmpg/2.4/html/x354.htm (also used this for printing longs)
@@ -82,6 +86,20 @@ static int __init simplefs_init(void)
     pr_info("loading simplefs\n");
     pr_info("value of readAddress %d", readAddress);
     sharedaddress = 18446718784707231744llu;   //-234881024; //alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
+
+
+    //lock and status init
+    init_rwsem(&hash_page_rwsem);
+    for(i = 0; i < 10; i++){
+	    init_rwsem(&(size_locks[i]));
+    }
+
+    //inode size status setup
+    for(i = 0; i < 10; i++){
+	    inode_size_status[i] = 0;		
+    }
+	//end of lock and status init
+
 
     if(!readAddress){
 	    pr_info("addresses:");
@@ -226,10 +244,6 @@ static int __init simplefs_init(void)
 
     }
   
-	//inode size status setup
-	for(i = 0; i < 10; i++){
-		inode_size_status[i] = 0;		
-	}
     
 
     /*
