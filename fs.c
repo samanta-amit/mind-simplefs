@@ -31,6 +31,8 @@ unsigned long new_inode_lock_address[10];
 unsigned long combined_address[42];
 //struct spinlock_t size_locks[10];
 struct rw_semaphore size_locks[10];
+struct rw_semaphore remote_inode_locks[10];
+
 struct rw_semaphore hash_page_rwsem;
 
 static int readAddress = 0;
@@ -92,6 +94,7 @@ static int __init simplefs_init(void)
     init_rwsem(&hash_page_rwsem);
     for(i = 0; i < 10; i++){
 	    init_rwsem(&(size_locks[i]));
+	    init_rwsem(&(remote_inode_locks[i]));
     }
 
     //inode size status setup

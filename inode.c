@@ -69,7 +69,8 @@ struct rw_semaphore testsem;
 struct rw_semaphore testlock;
 //DEFINE_SPINLOCK(inode_dummy_page_lock);
 //extern spinlock_t dummy_page_lock; 
-DEFINE_SPINLOCK(remote_inode_lock);
+//DEFINE_SPINLOCK(remote_inode_lock);
+extern struct rw_semaphore remote_inode_locks[10];
 
 int remote_lock_status = 0; //0 not held, 1 read mode, 2 write mode
 extern struct rw_semaphore size_locks[10];
@@ -507,7 +508,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    if(addr == new_inode_lock_address[i]){
 		    //pr_info("address callback was inode lock");
 		    pr_info("lock ac 14");
-		    spin_lock(&remote_inode_lock);  
+		    down_write(&remote_inode_locks[i]);  
 		    invalidate_lock_write(0, inv_argv, new_inode_lock_address[i]);
 
 		    /*pr_info("RECEIVED INVALIDATION");
@@ -519,7 +520,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 		    //downgrade copy (need to separate for invalid and shared)
 		    remote_lock_status = 0;
 		    //removed to test for deadlock
-		    spin_unlock(&remote_inode_lock);  
+		    up_write(&remote_inode_locks[i]);  
 		    return 1;
 	    }
     }
@@ -1460,7 +1461,7 @@ void lock_loop(int ino){
 		//down_write(&testsem);
 		pr_info("lock ac 15");
 
-		spin_lock(&remote_inode_lock);  
+		down_write(&remote_inode_locks[i]);  
 
 		pr_info("got lock, status was %d", remote_lock_status);
 		if(remote_lock_status == 2){
@@ -1470,7 +1471,7 @@ void lock_loop(int ino){
 
 			bool acquired = get_remote_lock_access(0, new_inode_lock_address[i]);
 			if(!acquired){
-				spin_unlock(&remote_inode_lock);
+				up_write(&remote_inode_locks[i]);
 				continue; //force retry
 			}
 			remote_lock_status = 2; //write
@@ -1504,7 +1505,7 @@ void simple_dfs_inode_unlock(struct inode *inode){
 	}
 	int i = 0;
 	//release remote lock
-	spin_unlock(&remote_inode_lock);  
+	up_write(&remote_inode_locks[inode->i_ino]);  
 	up_write(&inode->i_rwsem);
 	//up_write(&testsem);
 	//pr_info("lock released %d", inode->i_ino);
@@ -1530,7 +1531,7 @@ void simple_dfs_inode_unlock_shared(struct inode *inode){
 		//that occurs at the beginning from the dcache stuff
 	}
 	int i = 0;	
-	spin_unlock(&remote_inode_lock);  
+	up_write(&remote_inode_locks[inode->i_ino]);  
 	up_write(&inode->i_rwsem);
 	//pr_info("read lock released %d", inode->i_ino);
 
