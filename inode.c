@@ -1461,7 +1461,7 @@ void lock_loop(int ino){
 		//down_write(&testsem);
 		pr_info("lock ac 15");
 
-		down_write(&remote_inode_locks[i]);  
+		down_write(&remote_inode_locks[ino]);  
 
 		pr_info("got lock, status was %d", remote_lock_status);
 		if(remote_lock_status == 2){
@@ -1471,7 +1471,7 @@ void lock_loop(int ino){
 
 			bool acquired = get_remote_lock_access(0, new_inode_lock_address[i]);
 			if(!acquired){
-				up_write(&remote_inode_locks[i]);
+				up_write(&remote_inode_locks[ino]);
 				continue; //force retry
 			}
 			remote_lock_status = 2; //write
@@ -1916,11 +1916,11 @@ static const struct inode_operations simplefs_inode_ops = {
     .symlink = simplefs_symlink,
 
     
-//    .dfs_inode_lock = simple_dfs_inode_lock,
- //   .dfs_inode_unlock = simple_dfs_inode_unlock,
-    .dfs_i_size_read = simple_i_size_read,
+    .dfs_inode_lock = simple_dfs_inode_lock,
+    .dfs_inode_unlock = simple_dfs_inode_unlock,
+   .dfs_i_size_read = simple_i_size_read,
     .dfs_i_size_write = simple_i_size_write,
-    /*
+    
     .dfs_inode_lock_shared = simple_dfs_inode_lock_shared,
     .dfs_inode_unlock_shared = simple_dfs_inode_unlock_shared,
     .dfs_inode_trylock = simple_dfs_inode_trylock,
@@ -1930,7 +1930,7 @@ static const struct inode_operations simplefs_inode_ops = {
     .inode_down_read_killable = simple_inode_down_read_killable,
     .inode_down_write_killable = simple_inode_down_write_killable, 
     .setattr = dfs_setattr, //don't need this since setattr uses i_size_write when truncating
- */	  
+	  
     //getattr also just uses i_size_read
 
 
