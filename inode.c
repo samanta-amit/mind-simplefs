@@ -60,7 +60,6 @@ extern unsigned long size_lock_address;
 extern unsigned long new_inode_lock_address[10];
 
 extern unsigned long inode_size_address[10];
-extern unsigned int inode_size_status[10];
 extern struct super_block * super_block;
 extern spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 
@@ -75,6 +74,8 @@ struct rw_semaphore testlock;
 //DECLARE_RWSEM(rw_inode_lock);
 
 unsigned int remote_lock_status[10] = {0,0,0,0,0,0,0,0,0,0}; //0 not held, 1 read mode, 2 write mode
+unsigned int inode_size_status[10] = {0,0,0,0,0,0,0,0,0,0}; //0 not held, 1 read mode, 2 write mode
+
 //extern struct rw_semaphore size_locks[10];
 extern spinlock_t * spin_size_lock[10];
 
@@ -1671,7 +1672,6 @@ int size_loop(int ino){
 	//return -1; //testing removing this
 
 	while(1){
-		int i = 0;
 
 		//down_write(&testsem);
 		//pr_info("lock ac 17");

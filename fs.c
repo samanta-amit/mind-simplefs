@@ -24,7 +24,6 @@ unsigned long sharedaddress;
 unsigned long shmem_address[10];
 unsigned long inode_address[10];
 unsigned long inode_size_address[10];
-unsigned int inode_size_status[10];
 
 unsigned long size_lock_address;
 unsigned long inode_lock_address;
@@ -120,10 +119,6 @@ static int __init simplefs_init(void)
 
     }
 
-    //inode size status setup
-    for(i = 0; i < 10; i++){
-	    inode_size_status[i] = 0;		
-    }
 	//end of lock and status init
 
 
