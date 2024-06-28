@@ -136,7 +136,6 @@ u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv);
 
 
 
-
 /* Getters for superbock and inode */
 #define SIMPLEFS_SB(sb) (sb->s_fs_info)
 #define SIMPLEFS_INODE(inode) \

@@ -25,6 +25,7 @@ unsigned long shmem_address[10];
 unsigned long inode_address[10];
 unsigned long inode_size_address[10];
 unsigned int inode_size_status[10];
+
 unsigned long size_lock_address;
 unsigned long inode_lock_address;
 unsigned long new_inode_lock_address[10];
@@ -32,6 +33,23 @@ unsigned long combined_address[42];
 //struct spinlock_t size_locks[10];
 struct rw_semaphore size_locks[10];
 struct rw_semaphore remote_inode_locks[10];
+struct lock_class_key i_size_key;
+struct lock_class_key i_remote_key;
+
+DEFINE_SPINLOCK(s0);DEFINE_SPINLOCK(s1);DEFINE_SPINLOCK(s2);DEFINE_SPINLOCK(s3);
+DEFINE_SPINLOCK(s4);DEFINE_SPINLOCK(s5);DEFINE_SPINLOCK(s6);DEFINE_SPINLOCK(s7);
+DEFINE_SPINLOCK(spin8);DEFINE_SPINLOCK(s9);
+
+spinlock_t * spin_size_lock[10] = {&s0, &s1, &s2, &s3, &s4,&s5,&s6,&s7,&spin8,&s9}; 
+
+DEFINE_SPINLOCK(l0);DEFINE_SPINLOCK(l1);DEFINE_SPINLOCK(l2);DEFINE_SPINLOCK(l3);
+DEFINE_SPINLOCK(l4);DEFINE_SPINLOCK(l5);DEFINE_SPINLOCK(l6);DEFINE_SPINLOCK(l7);
+DEFINE_SPINLOCK(l8);DEFINE_SPINLOCK(l9);
+
+spinlock_t * spin_inode_lock[10] = {&l0, &l1, &l2, &l3, &l4,&l5,&l6,&l7,&l8,&l9}; 
+
+
+
 
 struct rw_semaphore hash_page_rwsem;
 
@@ -94,7 +112,12 @@ static int __init simplefs_init(void)
     init_rwsem(&hash_page_rwsem);
     for(i = 0; i < 10; i++){
 	    init_rwsem(&(size_locks[i]));
+	    lockdep_set_class(&(size_locks[i]), i_size_key);
 	    init_rwsem(&(remote_inode_locks[i]));
+	    lockdep_set_class(&(remote_inode_locks[i]), i_remote_key);
+	    spin_lock_init((spin_inode_lock[i]));
+	    spin_lock_init((spin_size_lock[i]));
+
     }
 
     //inode size status setup

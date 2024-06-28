@@ -69,12 +69,20 @@ struct rw_semaphore testsem;
 struct rw_semaphore testlock;
 //DEFINE_SPINLOCK(inode_dummy_page_lock);
 //extern spinlock_t dummy_page_lock; 
-//DEFINE_SPINLOCK(remote_inode_lock);
-extern struct rw_semaphore remote_inode_locks[10];
+//DEFINE_SPINLOCK(spin_inode_lock);
+//extern struct rw_semaphore remote_inode_locks[10];
+//struct rw_semaphore rw_inode_lock;
+//DECLARE_RWSEM(rw_inode_lock);
 
-int remote_lock_status = 0; //0 not held, 1 read mode, 2 write mode
-extern struct rw_semaphore size_locks[10];
-//DEFINE_SPINLOCK(size_lock);
+unsigned int remote_lock_status[10] = {0,0,0,0,0,0,0,0,0,0}; //0 not held, 1 read mode, 2 write mode
+//extern struct rw_semaphore size_locks[10];
+extern spinlock_t * spin_size_lock[10];
+
+extern spinlock_t * spin_inode_lock[10];
+
+
+//DECLARE_RWSEM(rw_size_lock);
+
 int remote_size_status = 0; //0 not held, 1 read mode, 2 write mode
 
 //this is protected by the testsem
@@ -480,13 +488,19 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 			struct inode * inode = ilookup(super_block, i);
 			//while(spin_trylock(&size_lock) == 0){
 			//}
-			down_write(&size_locks[i]);
+			spin_lock((spin_size_lock[i]));	
+			//down_write(&(size_locks[i]));
+			//down_write(&rw_size_lock);
+
 			time = current_kernel_time();
 			pr_info("acquire lock time is %ld", time.tv_sec); 
 	
 			invalidate_size_write(inode, i, inv_argv);
 			inode_size_status[i] = 0;
-			up_write(&size_locks[i]);  
+			//up_write(&(size_locks[i]));  
+			spin_unlock((spin_size_lock[i]));	
+			//up_write(&rw_size_lock);
+
 			//unlock_inode(inode);	don't need since we don't acquire locked version
 			time = current_kernel_time();
 			pr_info("end time is %ld", time.tv_sec); 
@@ -508,7 +522,9 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    if(addr == new_inode_lock_address[i]){
 		    //pr_info("address callback was inode lock");
 		    pr_info("lock ac 14");
-		    down_write(&remote_inode_locks[i]);  
+		    //down_write(&(remote_inode_locks[i]));  
+		    spin_lock(spin_inode_lock[i]);
+		    //down_write(&rw_inode_lock); 
 		    invalidate_lock_write(0, inv_argv, new_inode_lock_address[i]);
 
 		    /*pr_info("RECEIVED INVALIDATION");
@@ -518,9 +534,12 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 		      pr_info("RECEIVED INVALIDATION");
 		      */
 		    //downgrade copy (need to separate for invalid and shared)
-		    remote_lock_status = 0;
+		    remote_lock_status[i] = 0;
 		    //removed to test for deadlock
-		    up_write(&remote_inode_locks[i]);  
+		    spin_unlock(spin_inode_lock[i]);
+		    //up_write(&rw_inode_lock); 
+
+//up_write(&(remote_inode_locks[i]));  
 		    return 1;
 	    }
     }
@@ -538,11 +557,6 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
 {
 	//pr_info("simplefs_iget function called");
-	if(!initialized){
-		init_rwsem(&testsem);
-		initialized = 1;
-		//lockdep_set_class(&testsem, &sb->s_type->i_mutex_key);
-	}
     struct inode *inode = NULL;
     struct simplefs_inode *cinode = NULL;
     struct simplefs_inode_info *ci = NULL;
@@ -1456,25 +1470,28 @@ int test_inode_lock_simple(void){
 
 void lock_loop(int ino){
 	while(1){
-		int i = 0;
 
 		//down_write(&testsem);
 		pr_info("lock ac 15");
-
-		down_write(&remote_inode_locks[ino]);  
-
-		pr_info("got lock, status was %d", remote_lock_status);
-		if(remote_lock_status == 2){
+		pr_info("acquring lock %d", ino);
+		//down_write(&(remote_inode_locks[ino]));  
+		spin_lock(spin_inode_lock[ino]);
+		//down_write(&rw_inode_lock);	
+		pr_info("got lock, status was %d", remote_lock_status[ino]);
+		if(remote_lock_status[ino] == 2){
 			return;
 		}else{
 			pr_info("upgrading lock status result");
 
-			bool acquired = get_remote_lock_access(0, new_inode_lock_address[i]);
+			bool acquired = get_remote_lock_access(0, new_inode_lock_address[ino]);
 			if(!acquired){
-				up_write(&remote_inode_locks[ino]);
+				//up_write(&(remote_inode_locks[ino]));
+				spin_unlock(spin_inode_lock[ino]);
+				//up_write(&rw_inode_lock);	
+				BUG_ON(1);
 				continue; //force retry
 			}
-			remote_lock_status = 2; //write
+			remote_lock_status[ino] = 2; //write
 			return;
 		}
 
@@ -1488,59 +1505,40 @@ void lock_loop(int ino){
 }
 
 void simple_dfs_inode_lock(struct inode *inode){
-	if(!initialized){
-		init_rwsem(&testsem);
-		initialized = 1;
-	}
-
 	down_write(&inode->i_rwsem);
 	//loop to retry remote access
 	lock_loop(inode->i_ino);
 }
 
 void simple_dfs_inode_unlock(struct inode *inode){
-	if(!initialized){
-		init_rwsem(&testsem);
-		initialized = 1;
-	}
 	int i = 0;
 	//release remote lock
-	up_write(&remote_inode_locks[inode->i_ino]);  
+	//up_write(&(remote_inode_locks[inode->i_ino]));  
+	spin_unlock(spin_inode_lock[inode->i_ino]);	
+	//up_write(&rw_inode_lock);	
 	up_write(&inode->i_rwsem);
 	//up_write(&testsem);
 	//pr_info("lock released %d", inode->i_ino);
 }
 
 void simple_dfs_inode_lock_shared(struct inode *inode){
-	if(!initialized){
-		init_rwsem(&testsem);
-		init_rwsem(&testlock);
-		initialized = 1;
-	}
+	
 	down_write(&inode->i_rwsem);
 	lock_loop(inode->i_ino);
 	//down_read(&inode->i_rwsem);
 }
 
 void simple_dfs_inode_unlock_shared(struct inode *inode){
-	if(!initialized){
-		init_rwsem(&testsem);
-		init_rwsem(&testlock);
-		initialized = 1;
-		down_write(&testlock); //because of the unlock stuff
-		//that occurs at the beginning from the dcache stuff
-	}
 	int i = 0;	
-	up_write(&remote_inode_locks[inode->i_ino]);  
+	spin_unlock(spin_inode_lock[inode->i_ino]);
+	//up_write(&rw_inode_lock);	
+	//up_write(&(remote_inode_locks[inode->i_ino]));  
 	up_write(&inode->i_rwsem);
 	//pr_info("read lock released %d", inode->i_ino);
 
 }
 int simple_dfs_inode_trylock(struct inode *inode){
-	if(!initialized){
-		init_rwsem(&testsem);
-		initialized = 1;
-	}
+	
 	//pr_info("inode trylock write");
 	int acquired = down_write_trylock(&inode->i_rwsem);
 	if(!acquired){
@@ -1552,10 +1550,7 @@ int simple_dfs_inode_trylock(struct inode *inode){
 }
 int simple_dfs_inode_trylock_shared(struct inode *inode){
 
-	if(!initialized){
-		init_rwsem(&testsem);
-		initialized = 1;
-	}
+
 	//pr_info("inode trylock write");
 	int acquired = down_write_trylock(&inode->i_rwsem);
 	if(!acquired){
@@ -1566,10 +1561,7 @@ int simple_dfs_inode_trylock_shared(struct inode *inode){
 }
 
 int simple_dfs_inode_is_locked(struct inode *inode){
-	if(!initialized){
-		init_rwsem(&testsem);
-		initialized = 1;
-	}
+
 	//pr_info("inode is locked function called");
 	return rwsem_is_locked(&inode->i_rwsem);
 	//return rwsem_is_locked(&testsem);
@@ -1577,10 +1569,7 @@ int simple_dfs_inode_is_locked(struct inode *inode){
 }
 
 void simple_dfs_inode_lock_nested(struct inode *inode, unsigned subclass){
-	if(!initialized){
-		init_rwsem(&testsem);
-		initialized = 1;
-	}
+
 	//pr_info("INODE LOCK NESTED CALLED");
 pr_info("******INODE LOCK NESTED CALLED");
 pr_info("INODE LOCK NESTED CALLED");
@@ -1688,8 +1677,10 @@ int size_loop(int ino){
 		//pr_info("lock ac 17");
 		//while(spin_trylock(&size_lock) == 0){
 		//}
-		down_write(&size_locks[ino]);	
-		
+		//down_write(&(size_locks[ino]));	
+		spin_lock((spin_size_lock[ino]));	
+		//down_write(&rw_size_lock);
+
 		//pr_info("got lock, status was %d", inode_size_status[ino]);
 		//pr_info("inode size for inode address %d is %d", ino, inode_size_address[ino]);
 		if(inode_size_status[ino] == 2){
@@ -1699,7 +1690,10 @@ int size_loop(int ino){
 
 			int result = get_remote_size_access(ino);
 			if(result == -1){
-				up_write(&size_locks[ino]);
+				//up_write(&(size_locks[ino]));
+				spin_unlock((spin_size_lock[ino]));	
+				//up_write(&rw_size_lock);
+
 				pr_info("retrying size loop");
 				BUG_ON(1);
 				return -1; //force retry
@@ -1738,7 +1732,9 @@ loff_t simple_i_size_read(const struct inode *inode){
 			//this means that we already have access
 			loff_t temp = inode->i_size;
 	//		pr_info("already had size access size was %d", temp);
-			up_write(&size_locks[inode->i_ino]);  
+			//up_write(&(size_locks[inode->i_ino]));  
+			spin_unlock((spin_size_lock[inode->i_ino]));	
+			//up_write(&rw_size_lock);
 
 			return temp; 
 		}else{
@@ -1751,7 +1747,10 @@ loff_t simple_i_size_read(const struct inode *inode){
 	//		pr_info("old size%d", temp);
 			non_const_inode->i_size = size;
 			temp = non_const_inode->i_size;
-			up_write(&size_locks[inode->i_ino]);  
+			//up_write(&(size_locks[inode->i_ino]));  
+			spin_unlock((spin_size_lock[inode->i_ino]));	
+			//up_write(&rw_size_lock);
+
 			return temp; 
 
 		}
@@ -1797,12 +1796,18 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 			//this means that we already have access
 			//pr_info("already had size access");
 			inode->i_size = i_size;
-			up_write(&size_locks[inode->i_ino]);  
+			//up_write(&(size_locks[inode->i_ino]));  
+			spin_unlock((spin_size_lock[inode->i_ino]));	
+			//up_write(&rw_size_lock);
+
 			return; 
 		}else{
 			//pr_info("gained size access");
 			inode->i_size = i_size;
-			up_write(&size_locks[inode->i_ino]);  
+			//up_write(&(size_locks[inode->i_ino]));  
+			spin_unlock((spin_size_lock[inode->i_ino]));	
+			//up_write(&rw_size_lock);
+
 			return; 
 
 		}
