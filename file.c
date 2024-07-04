@@ -297,9 +297,13 @@ static int mind_fetch_page(
 	{
 		cancel_waiting_for_nack(wait_node);
 		pr_info("stopped waiting for nack");
+		BUG_ON(1);
+
 	}
 	r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
-
+	if(r){
+		BUG_ON(1);
+	}
 	//mind_pr_cache_dir_state(
 	//	"AFTER PFAULT ACK/NACK",
 	//	start_time, shmem_address,
@@ -350,9 +354,13 @@ static int mind_fetch_page_write(
         if(r <= 0){
                 cancel_waiting_for_nack(wait_node);
 		pr_info("stopped waiting");
+		BUG_ON(1);
+
 	}
         r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
-
+	if(r){
+		BUG_ON(1);
+	}
         //mind_pr_cache_dir_state(
         //        "AFTER PFAULT ACK/NACK",
         //        start_time, shmem_address,

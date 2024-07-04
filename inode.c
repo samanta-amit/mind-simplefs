@@ -93,7 +93,7 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino);
 int REC_NACK = -1024;
 
 static int mind_fetch_page_write(
-        uintptr_t shmem_address, void *page_dma_address, size_t *data_size)
+        uintptr_t shmem_address, void *page_dma_address, size_t *data_size, bool write) 
 {
         struct fault_reply_struct ret_buf;
         struct cache_waiting_node *wait_node = NULL;
@@ -125,7 +125,11 @@ static int mind_fetch_page_write(
         // NULL struct task_struct* is okay here because
         // if is_kshmem_address(shmem_address) then task_struct is never
         // derefenced.
-        r = send_pfault_to_mn(NULL, X86_PF_WRITE, shmem_address, 0, &ret_buf);
+       	if(write){ 
+	r = send_pfault_to_mn(NULL, X86_PF_WRITE, shmem_address, 0, &ret_buf);
+	}else{
+	r = send_pfault_to_mn(NULL, 0, shmem_address, 0, &ret_buf);
+	}
 	pr_info("r value mind_fetch_page_write %d", r);
         pr_info("sending pfault to mn done");
         wait_node->ack_buf = ret_buf.ack_buf;
@@ -159,6 +163,8 @@ static int mind_fetch_page_write(
 
 
 
+
+
 static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
 
 	//pr_info("invalidate_page_write 1");
@@ -187,7 +193,7 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
 
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(cpu_id);
-        r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+        r = mind_fetch_page_write(inode_pages_address, buf, &data_size, true);
         //BUG_ON(r);
 	if(r <= 0){
 		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
@@ -1587,7 +1593,7 @@ pr_info("******INODE LOCK NESTED CALLED");
 }
 
 
-static int get_remote_size_access(int inode_ino){
+static int get_remote_size_access(int inode_ino, bool write){
 
 	pr_info("invalidate_page_write 1");
         uintptr_t inode_pages_address;
@@ -1616,7 +1622,7 @@ static int get_remote_size_access(int inode_ino){
 
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(cpu_id);
-        r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+        r = mind_fetch_page_write(inode_pages_address, buf, &data_size, write);
         //BUG_ON(r);
 	if(r <= 0){
 		pr_info("FAILED TO GET ACCESS, TRY AGAIN");
@@ -1668,7 +1674,7 @@ static int get_remote_size_access(int inode_ino){
 //returns -1 if we already have the status
 //loops until access is gained
 //will return new size when accessed
-int size_loop(int ino){
+int size_loop(int ino, bool write){
 	//return -1; //testing removing this
 
 	while(1){
@@ -1683,12 +1689,12 @@ int size_loop(int ino){
 
 		//pr_info("got lock, status was %d", inode_size_status[ino]);
 		//pr_info("inode size for inode address %d is %d", ino, inode_size_address[ino]);
-		if(inode_size_status[ino] == 2){
+		if((write && inode_size_status[ino] == 2) || (!write && inode_size_status[ino] >= 1)){
 			return -1;
 		}else{
 //			pr_info("updating size status ");
 
-			int result = get_remote_size_access(ino);
+			int result = get_remote_size_access(ino, write);
 			if(result == -1){
 				//up_write(&(size_locks[ino]));
 				spin_unlock((spin_size_lock[ino]));	
@@ -1699,7 +1705,12 @@ int size_loop(int ino){
 				return -1; //force retry
 				continue;
 			}
-			inode_size_status[ino] = 2; //write
+			if(write){
+				inode_size_status[ino] = 2; //write
+			}else{
+				inode_size_status[ino] = 1; //read
+
+			}
 
 //			pr_info("updated inode size status %d", inode_size_status[ino]);
 			return result;
@@ -1726,7 +1737,7 @@ loff_t simple_i_size_read(const struct inode *inode){
 		//spin_lock(&size_lock);
 		
 
-		size = size_loop(inode->i_ino);	
+		size = size_loop(inode->i_ino, false);	
 		//lock acquired in size loop
 		if(size == -1){
 			//this means that we already have access
@@ -1790,7 +1801,7 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 	//pr_info("writing i_size for inode %d", inode->i_ino);
 		//spin_lock(&size_lock);
 		int size = -1;
-		size = size_loop(inode->i_ino);	
+		size = size_loop(inode->i_ino, true);	
 		//lock acquired in size loop
 		if(size == -1){
 			//this means that we already have access
