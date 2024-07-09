@@ -710,7 +710,9 @@ static struct inode *simplefs_new_inode(struct inode *dir, mode_t mode)
         set_nlink(inode, 2); /* . and .. */
     } else if (S_ISREG(mode)) {
         ci->ei_block = bno;
-        inode->i_size = 0;
+        //inode->i_size = 0;
+	pr_info("writing i_size on new inode");	
+	i_size_write(inode, 0);
         inode->i_fop = &simplefs_file_ops;
         inode->i_mapping->a_ops = &simplefs_aops;
         set_nlink(inode, 1);
@@ -1620,7 +1622,6 @@ int size_loop(int ino, bool write){
 int  test_counter = 0;
 
 loff_t simple_i_size_read(const struct inode *inode){
-
 	if(inode->i_ino != 0){
 		int size = -1;
 		//spin_lock(&size_lock);
@@ -1634,7 +1635,6 @@ loff_t simple_i_size_read(const struct inode *inode){
 			//up_write(&(size_locks[inode->i_ino]));  
 			spin_unlock((spin_size_lock[inode->i_ino]));	
 			//up_write(&rw_size_lock);
-
 			return temp; 
 		}else{
 			//have to remove const here
