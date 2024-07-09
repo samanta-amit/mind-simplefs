@@ -128,7 +128,7 @@ static struct shmem_coherence_state * shmem_in_hashmap(unsigned long shmem_addr)
 
 extern unsigned long shmem_address[10];
 extern unsigned long inode_address[10];
-static bool invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page);
+static bool invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page, bool readpage);
 
 
 struct page_lock_status {
@@ -242,6 +242,7 @@ static void mind_pr_cache_dir_state(const char* msg,
 static int mind_fetch_page(
 	uintptr_t shmem_address, void *page_dma_address, size_t *data_size)
 {
+
 	struct fault_reply_struct ret_buf;
 	struct cache_waiting_node *wait_node = NULL;
 	int r;
@@ -334,7 +335,9 @@ static int mind_fetch_page_write(
 	}
         r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 	if(r){
-		BUG_ON(1);
+		cancel_waiting_for_nack(wait_node);
+		return -1;
+		//BUG_ON(1);
 	}
         //mind_pr_cache_dir_state(
         //        "AFTER PFAULT ACK/NACK",
@@ -763,60 +766,72 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 
 
 //TODO changed this so that it doesn't need page pointer
-static bool invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page){
+static bool invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page, bool readpage){
 
-        //struct page * testp = pagep;
-        uintptr_t inode_pages_address;
-        int r;
-        struct mm_struct *mm;
-        mm = get_init_mm();
-        spinlock_t *ptl_ptr = NULL;
-        pte_t *temppte;
-        void *ptrdummy;
-        static struct cnthread_inv_msg_ctx send_ctx;
-        loff_t test = 20; 
+	while(1){
+		//struct page * testp = pagep;
+		uintptr_t inode_pages_address;
+		int r;
+		struct mm_struct *mm;
+		mm = get_init_mm();
+		spinlock_t *ptl_ptr = NULL;
+		pte_t *temppte;
+		void *ptrdummy;
+		static struct cnthread_inv_msg_ctx send_ctx;
+		loff_t test = 20; 
 
-        const struct address_space *mapping = file->f_mapping;
+		const struct address_space *mapping = file->f_mapping;
 
-        inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (page));
+		inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (page));
 
-	int cpu_id = get_cpu();
-	
-        //spin_lock(&dummy_page_lock);
-	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+		int cpu_id = get_cpu();
 
-
-        size_t data_size;
-        void *buf = get_dummy_page_dma_addr(cpu_id);
-        r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
-        BUG_ON(r);
-
-        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
-
-        ptrdummy = get_dummy_page_buf_addr(cpu_id);
-
-        //writes data to that page
-        //copy data into dummy buffer, and send to switch
-        simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), PAGE_SIZE, &test);
-        
-	//int i;
-        //for(i = 0; i < 20; i++){
-        //}
+		//spin_lock(&dummy_page_lock);
+		spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
 
 
-        //spin_lock(ptl_ptr);
+		size_t data_size;
+		void *buf = get_dummy_page_dma_addr(cpu_id);
+		r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+		if(r == -1){
+			spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+			continue;
+		}
 
-        //cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
-        //temppte, CN_OTHER_PAGE, 0, buf);
+		temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
 
-        //cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
+		ptrdummy = get_dummy_page_buf_addr(cpu_id);
 
-        // spin_unlock(ptl_ptr);
-	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
-        //spin_unlock(&dummy_page_lock);
-        //spin_unlock_irq(&mapping->tree_lock);
+		//read the data from the page if we don't already have it
+		if(readpage){	
+			simplefs_kernel_page_write(testp, get_dummy_page_buf_addr(cpu_id), PAGE_SIZE, 0);
+		}
 
-        return true;
+		//writes data to that page
+		//copy data into dummy buffer, and send to switch
+		//simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), PAGE_SIZE, &test);
+		
+		
+
+		//int i;
+		//for(i = 0; i < 20; i++){
+		//}
+
+
+		//spin_lock(ptl_ptr);
+
+		//cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+		//temppte, CN_OTHER_PAGE, 0, buf);
+
+		//cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, &send_ctx, 0);
+
+		// spin_unlock(ptl_ptr);
+		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+		//spin_unlock(&dummy_page_lock);
+		//spin_unlock_irq(&mapping->tree_lock);
+
+		return true;
+	}
 }
 
 struct page *test_grab_cache_page_write_begin(struct address_space *mapping,
@@ -961,7 +976,6 @@ static int simplefs_write_end(struct file *file,
 
     /* Complete the write() */
     int ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
-
 
 
     if (ret < len) {
@@ -1627,6 +1641,8 @@ again:
 
 		}
 
+	
+		/*	
 		//request access to the page here
 		if(temp.old_state < READ){
 
@@ -1654,9 +1670,15 @@ again:
 			//unlock_page(page);
 
 
-		}
+		}*/
 		if (temp.old_state < WRITE){
-			invalidate_page_write(page, file, inode, currentpage);
+			if(temp.old_state < READ){
+				//request access to page and then read the page 
+				//if we don't have in read mode then we are missing data
+				invalidate_page_write(page, file, inode, currentpage, true);
+			}else{
+				invalidate_page_write(page, file, inode, currentpage, false);
+			}
 		}
 
 
@@ -1813,6 +1835,4 @@ const struct file_operations simplefs_file_ops = {
     .write_iter = simplefs_generic_file_write_iter,
     .fsync = generic_file_fsync,
 };
-
-
 

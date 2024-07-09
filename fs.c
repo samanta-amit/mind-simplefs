@@ -41,6 +41,20 @@ DEFINE_SPINLOCK(spin8);DEFINE_SPINLOCK(s9);
 
 spinlock_t * spin_size_lock[10] = {&s0, &s1, &s2, &s3, &s4,&s5,&s6,&s7,&spin8,&s9}; 
 
+DECLARE_RWSEM(srw0);
+DECLARE_RWSEM(srw1);
+DECLARE_RWSEM(srw2);
+DECLARE_RWSEM(srw3);
+DECLARE_RWSEM(srw4);
+DECLARE_RWSEM(srw5);
+DECLARE_RWSEM(srw6);
+DECLARE_RWSEM(srw7);
+DECLARE_RWSEM(srw8);
+DECLARE_RWSEM(srw9);
+
+struct rw_semaphore * size_rwlock[10] = {&srw0,&srw1,&srw2,&srw3,&srw4,&srw5,&srw6,&srw7,&srw8,&srw9};
+
+
 DEFINE_SPINLOCK(l0);DEFINE_SPINLOCK(l1);DEFINE_SPINLOCK(l2);DEFINE_SPINLOCK(l3);
 DEFINE_SPINLOCK(l4);DEFINE_SPINLOCK(l5);DEFINE_SPINLOCK(l6);DEFINE_SPINLOCK(l7);
 DEFINE_SPINLOCK(l8);DEFINE_SPINLOCK(l9);
@@ -116,6 +130,7 @@ static int __init simplefs_init(void)
 	    lockdep_set_class(&(remote_inode_locks[i]), i_remote_key);
 	    spin_lock_init((spin_inode_lock[i]));
 	    spin_lock_init((spin_size_lock[i]));
+	    init_rwsem((size_rwlock[i]));
 
     }
 
