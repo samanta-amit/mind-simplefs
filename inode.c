@@ -123,11 +123,12 @@ static int mind_fetch_page_write(
         // NULL struct task_struct* is okay here because
         // if is_kshmem_address(shmem_address) then task_struct is never
         // derefenced.
-       	if(write){ 
+	if(write){ 
 	r = send_pfault_to_mn(NULL, X86_PF_WRITE, shmem_address, 0, &ret_buf);
 	}else{
 	r = send_pfault_to_mn(NULL, 0, shmem_address, 0, &ret_buf);
 	}
+
         wait_node->ack_buf = ret_buf.ack_buf;
 
 
@@ -1549,7 +1550,7 @@ static int get_remote_size_access(int inode_ino, bool write){
 	if(r <= 0){
 		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 		//spin_unlock(&dummy_page_lock);
-		BUG_ON(1);
+		//BUG_ON(1);
 
         	return -1;
 	}
@@ -1628,8 +1629,8 @@ int size_loop(int ino, bool write){
 
 				//up_write(&rw_size_lock);
 
-				BUG_ON(1);
-				return -1; //force retry
+				//BUG_ON(1);
+				//return -1; //force retry
 				continue;
 			}
 			if(write){
