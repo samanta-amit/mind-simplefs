@@ -161,7 +161,7 @@ static int mind_fetch_page_write(
 
 
 
-static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
+static bool get_remote_lock_access(int inode_ino, unsigned long lock_address, bool write){
 
         uintptr_t inode_pages_address;
         int r;
@@ -184,7 +184,7 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address){
 
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(cpu_id);
-        r = mind_fetch_page_write(inode_pages_address, buf, &data_size, true);
+        r = mind_fetch_page_write(inode_pages_address, buf, &data_size, write);
         //BUG_ON(r);
 	if(r <= 0){
 
@@ -1409,18 +1409,21 @@ int test_inode_lock_simple(void){
 }
 
 
-void lock_loop(int ino){
+void lock_loop(int ino, bool write){
+	if(write){
+		pr_info("acquiring %d in write", ino);
+	}
 	while(1){
 
 		//down_write(&testsem);
 		//down_write(&(remote_inode_locks[ino]));  
 		spin_lock(spin_inode_lock[ino]);
 		//down_write(&rw_inode_lock);	
-		if(remote_lock_status[ino] == 2){
+		if((write && remote_lock_status[ino] == 2) || (!write && remote_lock_status[ino] >= 1)){
 			return;
 		}else{
 
-			bool acquired = get_remote_lock_access(0, new_inode_lock_address[ino]);
+			bool acquired = get_remote_lock_access(0, new_inode_lock_address[ino], write);
 			if(!acquired){
 				//up_write(&(remote_inode_locks[ino]));
 				spin_unlock(spin_inode_lock[ino]);
@@ -1428,7 +1431,12 @@ void lock_loop(int ino){
 				//BUG_ON(1);
 				continue; //force retry
 			}
-			remote_lock_status[ino] = 2; //write
+			if(write){
+				remote_lock_status[ino] = 2; //write
+			}else{
+				remote_lock_status[ino] = 1; //read
+
+			}
 			return;
 		}
 
@@ -1444,7 +1452,7 @@ void lock_loop(int ino){
 void simple_dfs_inode_lock(struct inode *inode){
 	down_write(&inode->i_rwsem);
 	//loop to retry remote access
-	lock_loop(inode->i_ino);
+	lock_loop(inode->i_ino, true);
 }
 
 void simple_dfs_inode_unlock(struct inode *inode){
@@ -1466,7 +1474,7 @@ void simple_dfs_inode_lock_shared(struct inode *inode){
 	pr_info("shared lock");	
 
 	down_write(&inode->i_rwsem);
-	lock_loop(inode->i_ino);
+	lock_loop(inode->i_ino, true);
 	//down_read(&inode->i_rwsem);
 }
 
@@ -1484,7 +1492,7 @@ int simple_dfs_inode_trylock(struct inode *inode){
 	if(!acquired){
 		return acquired;//return down_write_trylock(&testsem);
 	}
-	lock_loop(inode->i_ino);
+	lock_loop(inode->i_ino, true);
 
 
 }
@@ -1502,7 +1510,7 @@ int simple_dfs_inode_trylock_shared(struct inode *inode){
 	if(!acquired){
 		return acquired;//return down_write_trylock(&testsem);
 	}
-	lock_loop(inode->i_ino);
+	lock_loop(inode->i_ino, true);
 
 }
 
@@ -1516,7 +1524,7 @@ int simple_dfs_inode_is_locked(struct inode *inode){
 void simple_dfs_inode_lock_nested(struct inode *inode, unsigned subclass){
 
 	down_write_nested(&inode->i_rwsem, subclass);
-	lock_loop(inode->i_ino);
+	lock_loop(inode->i_ino, true);
 
 }
 
@@ -1793,7 +1801,7 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 int simple_inode_down_read_killable(struct inode * inode){
 		int result = down_write_killable(&inode->i_rwsem);
 	if(result == 0){ //0 means no error
-		lock_loop(inode->i_ino);
+		lock_loop(inode->i_ino, true);
 	}
 	return result;
 }
@@ -1802,7 +1810,7 @@ int simple_inode_down_write_killable(struct inode * inode){
 
 	int result = down_write_killable(&inode->i_rwsem);
 	if(result == 0){
-		lock_loop(inode->i_ino);
+		lock_loop(inode->i_ino, true);
 	}
 	return result;
 

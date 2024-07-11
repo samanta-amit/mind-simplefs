@@ -134,6 +134,8 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv);
 u64 page_shmem_address_check(void *addr, unsigned long size);
 u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv);
 
+//lock sync
+void lock_loop(int ino, bool write);
 
 
 /* Getters for superbock and inode */

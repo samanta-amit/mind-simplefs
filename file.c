@@ -66,6 +66,8 @@ struct shmem_coherence_state {
 };
 
 extern struct rw_semaphore hash_page_rwsem;
+extern spinlock_t * spin_inode_lock[10];
+extern void lock_loop(int ino, bool write);
 
 DEFINE_HASHTABLE(shmem_states, 8); // 8 = 256 buckets
 // Protects shmem_states and everything it references.
@@ -272,6 +274,7 @@ static int mind_fetch_page(
 	// if is_kshmem_address(shmem_address) then task_struct is never
 	// derefenced.
 	r = send_pfault_to_mn(NULL, 0, shmem_address, 0, &ret_buf);
+
 	wait_node->ack_buf = ret_buf.ack_buf;
 
 	pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
@@ -324,7 +327,8 @@ static int mind_fetch_page_write(
         // NULL struct task_struct* is okay here because
         // if is_kshmem_address(shmem_address) then task_struct is never
         // derefenced.
-        r = send_pfault_to_mn(NULL, X86_PF_WRITE, shmem_address, 0, &ret_buf);
+	r = send_pfault_to_mn(NULL, X86_PF_WRITE, shmem_address, 0, &ret_buf);
+
         wait_node->ack_buf = ret_buf.ack_buf;
 
         pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
@@ -767,7 +771,6 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 
 //TODO changed this so that it doesn't need page pointer
 static bool invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page, bool readpage){
-
 	while(1){
 		//struct page * testp = pagep;
 		uintptr_t inode_pages_address;
@@ -1806,14 +1809,37 @@ ssize_t simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *fr
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
 	ssize_t ret;
+	down_write(&inode->i_rwsem);
+	bool write = false;
+	while(1){
+		//acquire remote inode lock in read mode 	
+		lock_loop(inode->i_ino, write);
 
-	inode_lock(inode);
-	i_size_read(inode); 
+		if(write){
+			break;
+		}
 
+		//sync the inode size
+		int cur_size = i_size_read(inode); 
+		if(iocb->ki_pos + iov_length(from->iov, from->nr_segs) > cur_size){
+			pr_info("size will change");
+			spin_unlock(spin_inode_lock[inode->i_ino]); //remote sync 
+			write = true;
+			continue;
+		}else{
+			break;
+		}
+		//	pr_info("iocb starting position %d", iocb->ki_pos);
+		//	pr_info("iov_iter length %d", iov_length(from->iov, from->nr_segs));
+
+	}
 	ret = generic_write_checks(iocb, from);
 	if (ret > 0)
 		ret = __simplefs_generic_file_write_iter(iocb, from);
-	inode_unlock(inode);
+	//inode_unlock(inode);
+	spin_unlock(spin_inode_lock[inode->i_ino]); //remote sync 
+	up_write(&inode->i_rwsem);
+
 
 	if (ret > 0)
 		ret = generic_write_sync(iocb, ret);
