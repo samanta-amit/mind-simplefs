@@ -79,7 +79,8 @@ unsigned int inode_size_status[10] = {0,0,0,0,0,0,0,0,0,0}; //0 not held, 1 read
 //extern struct rw_semaphore size_locks[10];
 extern spinlock_t * spin_size_lock[10];
 extern struct rw_semaphore * size_rwlock[10];
-extern spinlock_t * spin_inode_lock[10];
+//extern spinlock_t * spin_inode_lock[10];
+extern struct rw_semaphore * inode_rwlock[10];
 
 
 //DECLARE_RWSEM(rw_size_lock);
@@ -137,13 +138,13 @@ static int mind_fetch_page_write(
                 cancel_waiting_for_nack(wait_node);
 		pr_info("RECEIVED NACK");
 
-		return -1;
+		//return -1;
 	}
 	r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 
         data_size = ret_buf.data_size;
 	if(r){
-		cancel_waiting_for_nack(wait_node);
+		//cancel_waiting_for_nack(wait_node);
 		return -1;
 	}else{
 		return 1;
@@ -187,7 +188,7 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address, bo
         r = mind_fetch_page_write(inode_pages_address, buf, &data_size, write);
         //BUG_ON(r);
 	if(r <= 0){
-
+		pr_info("retry 3");
 		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 	        //spin_unlock(&dummy_page_lock);
 		//BUG_ON(1);
@@ -471,14 +472,16 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
     for(i = 0; i < 10; i ++){    
 	    if(addr == new_inode_lock_address[i]){
 		    //down_write(&(remote_inode_locks[i]));  
-		    spin_lock(spin_inode_lock[i]);
+		    //spin_lock(spin_inode_lock[i]);
+		    down_write(inode_rwlock[i]);
 		    //down_write(&rw_inode_lock); 
 		    invalidate_lock_write(0, inv_argv, new_inode_lock_address[i]);
 
 		    //downgrade copy (need to separate for invalid and shared)
 		    remote_lock_status[i] = 0;
 		    //removed to test for deadlock
-		    spin_unlock(spin_inode_lock[i]);
+		    //spin_unlock(spin_inode_lock[i]);
+		   	up_write(inode_rwlock[i]); 
 		    //up_write(&rw_inode_lock); 
 
 //up_write(&(remote_inode_locks[i]));  
@@ -1411,13 +1414,14 @@ int test_inode_lock_simple(void){
 
 void lock_loop(int ino, bool write){
 	if(write){
-		pr_info("acquiring %d in write", ino);
+		//pr_info("acquiring %d in write", ino);
 	}
 	while(1){
 
 		//down_write(&testsem);
 		//down_write(&(remote_inode_locks[ino]));  
-		spin_lock(spin_inode_lock[ino]);
+		down_write(inode_rwlock[ino]);
+		//spin_lock(spin_inode_lock[ino]);
 		//down_write(&rw_inode_lock);	
 		if((write && remote_lock_status[ino] == 2) || (!write && remote_lock_status[ino] >= 1)){
 			return;
@@ -1426,7 +1430,8 @@ void lock_loop(int ino, bool write){
 			bool acquired = get_remote_lock_access(0, new_inode_lock_address[ino], write);
 			if(!acquired){
 				//up_write(&(remote_inode_locks[ino]));
-				spin_unlock(spin_inode_lock[ino]);
+				up_write(inode_rwlock[ino]);
+				//spin_unlock(spin_inode_lock[ino]);
 				//up_write(&rw_inode_lock);	
 				//BUG_ON(1);
 				continue; //force retry
@@ -1459,7 +1464,8 @@ void simple_dfs_inode_unlock(struct inode *inode){
 	int i = 0;
 	//release remote lock
 	//up_write(&(remote_inode_locks[inode->i_ino]));  
-	spin_unlock(spin_inode_lock[inode->i_ino]);	
+	up_write(inode_rwlock[inode->i_ino]);	
+	//spin_unlock(spin_inode_lock[inode->i_ino]);	
 	//up_write(&rw_inode_lock);	
 	up_write(&inode->i_rwsem);
 	//up_write(&testsem);
@@ -1480,7 +1486,8 @@ void simple_dfs_inode_lock_shared(struct inode *inode){
 
 void simple_dfs_inode_unlock_shared(struct inode *inode){
 	int i = 0;	
-	spin_unlock(spin_inode_lock[inode->i_ino]);
+	up_write(inode_rwlock[inode->i_ino]);
+	//spin_unlock(spin_inode_lock[inode->i_ino]);
 	//up_write(&rw_inode_lock);	
 	//up_write(&(remote_inode_locks[inode->i_ino]));  
 	up_write(&inode->i_rwsem);
@@ -1556,6 +1563,7 @@ static int get_remote_size_access(int inode_ino, bool write){
         r = mind_fetch_page_write(inode_pages_address, buf, &data_size, write);
         //BUG_ON(r);
 	if(r <= 0){
+		pr_info("retry 2");
 		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 		//spin_unlock(&dummy_page_lock);
 		//BUG_ON(1);

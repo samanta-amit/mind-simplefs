@@ -66,8 +66,9 @@ struct shmem_coherence_state {
 };
 
 extern struct rw_semaphore hash_page_rwsem;
-extern spinlock_t * spin_inode_lock[10];
+//extern spinlock_t * spin_inode_lock[10];
 extern void lock_loop(int ino, bool write);
+extern struct rw_semaphore * inode_rwlock[10];
 
 DEFINE_HASHTABLE(shmem_states, 8); // 8 = 256 buckets
 // Protects shmem_states and everything it references.
@@ -797,6 +798,7 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
 		void *buf = get_dummy_page_dma_addr(cpu_id);
 		r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
 		if(r == -1){
+			pr_info("retry 1");
 			spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 			continue;
 		}
@@ -1809,21 +1811,32 @@ ssize_t simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *fr
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
 	ssize_t ret;
+	//inode_lock(inode);
 	down_write(&inode->i_rwsem);
 	bool write = false;
+	
 	while(1){
 		//acquire remote inode lock in read mode 	
 		lock_loop(inode->i_ino, write);
 
+		//generic_write_checks will realign stuff if 
+		//we are trying to append to the end
+		ret = generic_write_checks(iocb, from);
+
 		if(write){
 			break;
 		}
-
-		//sync the inode size
-		int cur_size = i_size_read(inode); 
-		if(iocb->ki_pos + iov_length(from->iov, from->nr_segs) > cur_size){
-			pr_info("size will change");
-			spin_unlock(spin_inode_lock[inode->i_ino]); //remote sync 
+		int cur_size = i_size_read(inode);
+		//this was borrowed from elsewhere in the kernel
+		int new_size = iocb->ki_pos + iov_length(from->iov, from->nr_segs);
+		//taken from generic_write_checks
+		
+		//if we shrunk the size it should have already occurred
+		//we shouldn't be shrinking the size in here right?	
+		if ((new_size > cur_size)|| (iocb->ki_flags & IOCB_APPEND)){
+			//pr_info("size will change");
+			//spin_unlock(spin_inode_lock[inode->i_ino]); //remote sync 
+			up_write(inode_rwlock[inode->i_ino]);	
 			write = true;
 			continue;
 		}else{
@@ -1833,11 +1846,11 @@ ssize_t simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *fr
 		//	pr_info("iov_iter length %d", iov_length(from->iov, from->nr_segs));
 
 	}
-	ret = generic_write_checks(iocb, from);
 	if (ret > 0)
 		ret = __simplefs_generic_file_write_iter(iocb, from);
 	//inode_unlock(inode);
-	spin_unlock(spin_inode_lock[inode->i_ino]); //remote sync 
+	//spin_unlock(spin_inode_lock[inode->i_ino]); //remote sync 
+	up_write(inode_rwlock[inode->i_ino]);	
 	up_write(&inode->i_rwsem);
 
 
