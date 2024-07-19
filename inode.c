@@ -413,10 +413,18 @@ extern unsigned long inode_lock_address;
 }
 
 
-
-
+atomic_t count=ATOMIC_INIT(10); 
+//int testcount = 0;
 u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
+	
+	atomic_inc(&count);
+	pr_info("inv counter %d", count.counter);
+	int cpu_id = get_cpu();
+	//pr_info("start inv cpu is %d", cpu_id);
+	//testcount++;
+	//int temp = testcount;
+	//pr_info("start %d", temp);
     int i;
     
     /*
@@ -458,13 +466,17 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 			//time = current_kernel_time();
 
 			//inside of invalidate_size_write	
-			
+		//	pr_info("end %d", temp);
+		//pr_info("end inv cpu is %d", cpu_id);
+	
 		    return 1;
 
 	    }
    }
 
     if(addr == size_lock_address){
+		//pr_info("end %d", temp);
+		//pr_info("end inv cpu is %d", cpu_id);
 
 	    return 1;
     }
@@ -485,13 +497,18 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 		    //up_write(&rw_inode_lock); 
 
 //up_write(&(remote_inode_locks[i]));  
-		    return 1;
+		   	//pr_info("end %d", temp); 
+		//pr_info("end inv cpu is %d", cpu_id);
+
+			return 1;
 	    }
     }
     //do page sync (in file.c)
     page_testing_invalidate_page_callback(addr, inv_argv);
+    //pr_info("end %d", temp);
 
-    
+    		//pr_info("end inv cpu is %d", cpu_id);
+
     return 1024;
 }
 
@@ -1827,15 +1844,15 @@ int simple_inode_down_write_killable(struct inode * inode){
 
 //can set the size of the inode
 int dfs_setattr (struct dentry * dentry, struct iattr * iattr){
-
-	struct inode * inode = d_inode(dentry);
+	pr_info("set attr called");
+	//struct inode * inode = d_inode(dentry);
 	//taken from simple_setattr this is to avoid truncate set size
 	//that can go into the page writeback stuff which we 
 	//haven't fully implemented
-	if (iattr->ia_valid & ATTR_SIZE){
+	/*if (iattr->ia_valid & ATTR_SIZE){
 		i_size_write(inode, iattr->ia_size);
 		return 0;
-	}
+	}*/
 
 	return simple_setattr(dentry, iattr);
 
