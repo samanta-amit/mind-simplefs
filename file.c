@@ -798,10 +798,8 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
 
 		size_t data_size;
 		void *buf = get_dummy_page_dma_addr(cpu_id);
-		pr_info("requesting page from inode %d", mapping->host->i_ino);
 		r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
 		if(r == -1){
-			pr_info("retry 1");
 			spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 			continue;
 		}
@@ -1161,7 +1159,7 @@ page_ok:
 		 * another truncate extends the file - this is desired though).
 		 */
 
-		isize = i_size_read(inode);
+		/*isize = i_size_read(inode);
 
 		volatile int x = 0;
 		volatile int y = 0;
@@ -1171,7 +1169,7 @@ page_ok:
 		pr_info("x value is %d", x);
 		isize = i_size_read(inode);
 		pr_info("after i size read");
-
+	*/	
 
 		isize = i_size_read(inode);
 		end_index = (isize - 1) >> PAGE_SHIFT;
@@ -1567,6 +1565,10 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		//radix_tree_lookup(&mapping->page_tree, coherence_state->pagenum);
 	if(pagep){
 		lock_page(pagep);
+
+		if(!PageUptodate(pagep)){
+			pr_info("PAGE NOT UP TO DATE?");
+		}
 		struct page * testp = pagep;
 		
 		//perform page invalidation stuff here
@@ -1576,13 +1578,26 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		//ClearPageDirty(testp);
 		//SetPageError(testp);
 		coherence_state->state = 0;
+		//pr_info("inode size was %d", coherence_state->mapping->host->i_size);
+
 		//delete_from_page_cache(testp);
 		unlock_page(pagep);
 	}else{
 		struct page * testp = NULL;
 		//this can also be reached if something has been truncated
 		shmem_invalidate_page_write(coherence_state->mapping, testp, coherence_state->pagenum, inv_argv);
-
+		pr_info("LOST PAGE");
+		if(coherence_state->mapping->host->i_size != 0){
+			pr_info("file length wasn't zero");
+			if(coherence_state->mapping->host->i_size < coherence_state->pagenum * 4096){
+				pr_info("file has shrunk smaller than this page location");
+			}else{
+				pr_info("should we have been able to find the page here?");
+			}
+		}
+		
+		//print out the size of the inode
+		//pr_info("inode size was %d", coherence_state->mapping->host->i_size);
 		coherence_state->state = 0;
 
 	}
@@ -1850,52 +1865,54 @@ out:
 
 ssize_t simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
-	pr_info("generic file write iter");
 	struct file *file = iocb->ki_filp;
 	struct inode *inode = file->f_mapping->host;
 	ssize_t ret;
-	//inode_lock(inode);
+//	inode_lock(inode);
+//	ret = generic_write_checks(iocb, from);
+
 	down_write(&inode->i_rwsem);
 	bool write = false;
-	
+	int cur_size = i_size_read(inode);
+	//this was borrowed from elsewhere in the kernel
+	int new_size = iocb->ki_pos + iov_length(from->iov, from->nr_segs);
+	//taken from generic_write_checks
+
+	//if we shrunk the size it should have already occurred
+	//we shouldn't be shrinking the size in here right?	
+	if ((new_size > cur_size)|| (iocb->ki_flags & IOCB_APPEND)){
+		//pr_info("size will change");
+		//spin_unlock(spin_inode_lock[inode->i_ino]); //remote sync 
+		write = true;
+	}	
+
 	while(1){
-		//acquire remote inode lock in read mode 	
-		lock_loop(inode->i_ino, write);
+	//first try to acquire remote inode lock in read mode 	
+	lock_loop(inode->i_ino, write);
 
-		//generic_write_checks will realign stuff if 
-		//we are trying to append to the end
-		ret = generic_write_checks(iocb, from);
-
-		if(write){
-			break;
-		}
-		int cur_size = i_size_read(inode);
-		//this was borrowed from elsewhere in the kernel
-		int new_size = iocb->ki_pos + iov_length(from->iov, from->nr_segs);
-		//taken from generic_write_checks
-		
-		//if we shrunk the size it should have already occurred
-		//we shouldn't be shrinking the size in here right?	
+	if(!write){
+		//double check to make sure the size didn't change
 		if ((new_size > cur_size)|| (iocb->ki_flags & IOCB_APPEND)){
-			//pr_info("size will change");
-			//spin_unlock(spin_inode_lock[inode->i_ino]); //remote sync 
+			pr_info("size will change");
 			up_write(inode_rwlock[inode->i_ino]);	
 			write = true;
 			continue;
-		}else{
-			break;
 		}
-		//	pr_info("iocb starting position %d", iocb->ki_pos);
-		//	pr_info("iov_iter length %d", iov_length(from->iov, from->nr_segs));
-
 	}
+	break;
+	}
+	//generic_write_checks will realign stuff if 
+	//we are trying to append to the end
+	ret = generic_write_checks(iocb, from);
+
 	if (ret > 0)
 		ret = __simplefs_generic_file_write_iter(iocb, from);
-	//inode_unlock(inode);
-	//spin_unlock(spin_inode_lock[inode->i_ino]); //remote sync 
-	up_write(inode_rwlock[inode->i_ino]);	
-	up_write(&inode->i_rwsem);
 
+	up_write(inode_rwlock[inode->i_ino]);	
+		
+		
+	up_write(&inode->i_rwsem);
+//this WAS BUGGED
 
 	if (ret > 0)
 		ret = generic_write_sync(iocb, ret);
@@ -1904,7 +1921,7 @@ ssize_t simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *fr
 
 
 void simplefs_invalidatepage (struct page * p, unsigned int x, unsigned int y){
-	pr_info("invalidating page %d", p->index);
+	//pr_info("invalidating page %d", p->index);
 
 }
 

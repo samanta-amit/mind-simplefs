@@ -45,7 +45,7 @@
 
 #include "simplefs.h"
 
-
+#include <linux/time.h>
 
 
 
@@ -188,7 +188,6 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address, bo
         r = mind_fetch_page_write(inode_pages_address, buf, &data_size, write);
         //BUG_ON(r);
 	if(r <= 0){
-		pr_info("retry 3");
 		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 	        //spin_unlock(&dummy_page_lock);
 		//BUG_ON(1);
@@ -419,7 +418,6 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
 	
 	atomic_inc(&count);
-	pr_info("inv counter %d", count.counter);
 	int cpu_id = get_cpu();
 	//pr_info("start inv cpu is %d", cpu_id);
 	//testcount++;
@@ -1430,6 +1428,7 @@ int test_inode_lock_simple(void){
 
 
 void lock_loop(int ino, bool write){
+	//return;
 	if(write){
 		//pr_info("acquiring %d in write", ino);
 	}
@@ -1441,16 +1440,20 @@ void lock_loop(int ino, bool write){
 		//spin_lock(spin_inode_lock[ino]);
 		//down_write(&rw_inode_lock);	
 		if((write && remote_lock_status[ino] == 2) || (!write && remote_lock_status[ino] >= 1)){
+			//pr_info("already had lock access");
 			return;
 		}else{
+			//pr_info("didn't have lock access");
 
 			bool acquired = get_remote_lock_access(0, new_inode_lock_address[ino], write);
 			if(!acquired){
 				//up_write(&(remote_inode_locks[ino]));
 				up_write(inode_rwlock[ino]);
+				//usleep_range(1000,2000);
 				//spin_unlock(spin_inode_lock[ino]);
 				//up_write(&rw_inode_lock);	
 				//BUG_ON(1);
+				msleep(1);	
 				continue; //force retry
 			}
 			if(write){
@@ -1580,7 +1583,6 @@ static int get_remote_size_access(int inode_ino, bool write){
         r = mind_fetch_page_write(inode_pages_address, buf, &data_size, write);
         //BUG_ON(r);
 	if(r <= 0){
-		pr_info("retry 2");
 		spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 		//spin_unlock(&dummy_page_lock);
 		//BUG_ON(1);
@@ -1844,7 +1846,7 @@ int simple_inode_down_write_killable(struct inode * inode){
 
 //can set the size of the inode
 int dfs_setattr (struct dentry * dentry, struct iattr * iattr){
-	pr_info("set attr called");
+	//pr_info("set attr called");
 	//struct inode * inode = d_inode(dentry);
 	//taken from simple_setattr this is to avoid truncate set size
 	//that can go into the page writeback stuff which we 
