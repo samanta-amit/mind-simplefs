@@ -1725,6 +1725,14 @@ loff_t simple_i_size_read(const struct inode *inode){
 			loff_t temp = inode->i_size;
 			non_const_inode->i_size = size;
 			temp = non_const_inode->i_size;
+
+			//truncate_setsize(non_const_inode, size);
+			non_const_inode->i_blocks = non_const_inode->i_size / SIMPLEFS_BLOCK_SIZE + 2;
+			//TODO this isn't locked correctly
+			//should be using inode lock
+			//maybe move this into the writeback 
+			//part itself?
+			//mark_inode_dirty(non_const_inode);
 			//up_write(&(size_locks[inode->i_ino]));  
 			//spin_unlock((spin_size_lock[inode->i_ino]));	
 			up_write(size_rwlock[inode->i_ino]);
@@ -1776,6 +1784,8 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 		if(size == -2){
 			//we already had access
 			inode->i_size = i_size;
+			inode->i_blocks = inode->i_size / SIMPLEFS_BLOCK_SIZE + 2;
+
 			//up_write(&(size_locks[inode->i_ino]));  
 			//spin_unlock((spin_size_lock[inode->i_ino]));	
 			up_read(size_rwlock[inode->i_ino]);
@@ -1785,6 +1795,9 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 		}else if(size == -1){
 			//this means that we gained access from another thread 
 			inode->i_size = i_size;
+			inode->i_blocks = inode->i_size / SIMPLEFS_BLOCK_SIZE + 2;
+
+
 			//up_write(&(size_locks[inode->i_ino]));  
 			//spin_unlock((spin_size_lock[inode->i_ino]));	
 			up_write(size_rwlock[inode->i_ino]);
@@ -1795,6 +1808,8 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 			return; 
 		}else{
 			inode->i_size = i_size;
+			inode->i_blocks = inode->i_size / SIMPLEFS_BLOCK_SIZE + 2;
+
 			//up_write(&(size_locks[inode->i_ino]));  
 			//spin_unlock((spin_size_lock[inode->i_ino]));	
 			up_write(size_rwlock[inode->i_ino]);
@@ -1808,6 +1823,7 @@ void simple_i_size_write(struct inode *inode, loff_t i_size){
 		}
 	}else{
 		inode->i_size = i_size;
+		inode->i_blocks = inode->i_size / SIMPLEFS_BLOCK_SIZE + 2;
 
 	}
 

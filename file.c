@@ -762,13 +762,25 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 	//probably fix by acquiring in write mode here and releasing 
 	//at end of this function
 
-	//struct page_lock_status temp = acquire_page_lock(NULL, inode, currentpage, inode_pages_address, mapping, WRITE);
+	//maybe acquire inode lock here and then update 
+	//the i_blocks field before performing writeback?
 
-	//return simple_block_write_full_page(page, simplefs_file_get_block, wbc);
+	//struct page_lock_status temp = acquire_page_lock(NULL, inode, currentpage, inode_pages_address, mapping, WRITE);
+	pr_info("WRITE PAGE CALLED");
+	/*
+	struct address_space * test = page->mapping;
+       	struct inode * host = test->host;	
+	pr_info("inode locked %d", inode_is_locked(host));
+	inode_lock(host);
+	pr_info("inode locked %d", inode_is_locked(host));
+	pr_info("inode size %d", i_size_read(host));
+	inode_unlock(host);
+	*/
+	return simple_block_write_full_page(page, simplefs_file_get_block, wbc);
 
 	//hack to try and prevent problems with page writeback	
-	unlock_page(page);
-	return 0; 
+	//unlock_page(page);
+	//return 0; 
 }
 
 
@@ -996,7 +1008,7 @@ static int simplefs_write_end(struct file *file,
     nr_blocks_old = inode->i_blocks;
 
     /* Update inode metadata */
-    inode->i_blocks = inode->i_size / SIMPLEFS_BLOCK_SIZE + 2;
+    //inode->i_blocks = inode->i_size / SIMPLEFS_BLOCK_SIZE + 2;
     inode->i_mtime = inode->i_ctime = current_time(inode);
     mark_inode_dirty(inode);
 
