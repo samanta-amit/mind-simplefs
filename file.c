@@ -656,7 +656,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	SetPageUptodate(page);
 
 	BUG_ON(!PageUptodate(page));
-	pr_info("trying to read remote page");
+	//pr_info("trying to read remote page");
 
 	while(1){
 		//spin_lock(&dummy_page_lock);
@@ -679,7 +679,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 			continue;	
 		}else{
 
-			pr_info("finished reading remote page");
+			//pr_info("finished reading remote page");
 			simplefs_kernel_page_write(page, get_dummy_page_buf_addr(cpu), PAGE_SIZE, 0);
 			//simplefs_kernel_page_write(page, buf, PAGE_SIZE, 0);
 
@@ -689,7 +689,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 
 			spin_unlock(&cnthread_inval_send_ack_lock[cpu]);
 			//spin_unlock(&dummy_page_lock);
-			pr_info("unlocking in readpage");	
+			//pr_info("unlocking in readpage");	
 			unlock_page(page);
 
 			break;
@@ -757,7 +757,7 @@ int simple_block_write_full_page(struct page *page, get_block_t *get_block,
 
 		simple_do_invalidatepage(page, 0, PAGE_SIZE);
 
-		pr_info("block write full page unlock page");
+		//pr_info("block write full page unlock page");
 		unlock_page(page);
 		return 0; /* don't care */
 	}
@@ -790,7 +790,7 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 	//return simple_block_write_full_page(page, simplefs_file_get_block, wbc);
 
 	//hack to try and prevent problems with page writeback	
-	pr_info("unlocked page in writeback");	
+	//pr_info("unlocked page in writeback");	
 	unlock_page(page);
 	return 0; 
 }
@@ -877,7 +877,7 @@ struct page *test_grab_cache_page_write_begin(struct address_space *mapping,
 	page = pagecache_get_page(mapping, index, fgp_flags,
 			mapping_gfp_mask(mapping));
 
-	pr_info("acquire page locked");
+	//pr_info("acquire page locked");
 
 	if (page)
 		wait_for_stable_page(page);
@@ -905,7 +905,7 @@ int test_block_write_begin(struct address_space *mapping, loff_t pos, unsigned l
 
 	status = __block_write_begin(page, pos, len, get_block);
 	if (unlikely(status)) {
-		pr_info("unlocking page because test_block_write_begin failed");
+		//pr_info("unlocking page because test_block_write_begin failed");
 		unlock_page(page);
 		put_page(page);
 		page = NULL;
@@ -1011,7 +1011,7 @@ static int simplefs_write_end(struct file *file,
     /* Complete the write() */
     int ret = generic_write_end(file, mapping, pos, len, copied, page, fsdata);
 
-	pr_info("after generic_write_end");
+	//pr_info("after generic_write_end");
 
     if (ret < len) {
 	//TODO perform coherence on multiple pages
@@ -1026,7 +1026,7 @@ static int simplefs_write_end(struct file *file,
     inode->i_blocks = inode->i_size / SIMPLEFS_BLOCK_SIZE + 2;
     inode->i_mtime = inode->i_ctime = current_time(inode);
     mark_inode_dirty(inode);
-pr_info("after marking inode dirty");
+//pr_info("after marking inode dirty");
 
     /* If file is smaller than before, free unused blocks */
     if (nr_blocks_old > inode->i_blocks) {
@@ -1070,7 +1070,7 @@ end:
     //hash_shmem(inode_pages_address, mapping->host->i_ino, page->index, mapping, 1);
     //TODO perform coherence on multiple pages
 
-pr_info("returning from write end");
+//pr_info("returning from write end");
 
     
     return ret;
@@ -1130,9 +1130,7 @@ static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
 		inode_pages_address = shmem_address[mapping->host->i_ino] +
 			(PAGE_SIZE * (index));
 
-	temp_status = acquire_page_lock(filp, mapping->host, index, inode_pages_address, mapping, READ);
-	//up_write(&(temp_status.state->rwsem));
-	pr_info("start operating on inode %d page %d", mapping->host->i_ino, index);
+	//pr_info("start operating on inode %d page %d", mapping->host->i_ino, index);
 
 find_page:
 		if (fatal_signal_pending(current)) {
@@ -1157,7 +1155,7 @@ find_page:
 					index, last_index - index);
 		}
 		if (!PageUptodate(page)) {
-			pr_info("page not up to date on attempted read");
+			//pr_info("page not up to date on attempted read");
 			if (iocb->ki_flags & IOCB_NOWAIT) {
 				put_page(page);
 				goto would_block;
@@ -1169,7 +1167,7 @@ find_page:
 			 * serialisations and why it's safe.
 			 */
 			error = wait_on_page_locked_killable(page);
-			pr_info("done waiting on page locked");
+			//pr_info("done waiting on page locked");
 
 			if (unlikely(error))
 				goto readpage_error;
@@ -1184,7 +1182,7 @@ find_page:
 				goto page_not_up_to_date;
 			if (!trylock_page(page))
 				goto page_not_up_to_date;
-			pr_info("passed trylock");
+			//pr_info("passed trylock");
 			/* Did it get truncated before we got the lock? */
 			if (!page->mapping)
 				goto page_not_up_to_date_locked;
@@ -1192,7 +1190,7 @@ find_page:
 							offset, iter->count))
 				goto page_not_up_to_date_locked;
 			unlock_page(page);
-			pr_info("unlocking page");
+			//pr_info("unlocking page");
 		}
 page_ok:
 		/*
@@ -1268,28 +1266,24 @@ page_ok:
 			error = -EFAULT;
 			goto out;
 		}
-		if(temp_status.page_lock){
-
-			up_write(&(temp_status.state->rwsem));
-		}else{
-			up_read(&(temp_status.state->rwsem));
-		}
 		continue;
 
 page_not_up_to_date:
+		temp_status = acquire_page_lock(filp, mapping->host, index, inode_pages_address, mapping, READ);
+
 		/* Get exclusive access to the page ... */
 		error = lock_page_killable(page);
-		pr_info("page not up to date just locked page");
+		//pr_info("page not up to date just locked page");
 
 		if (unlikely(error))
 			goto readpage_error;
 
 page_not_up_to_date_locked:
-		pr_info("page not up to date locked");
+		//pr_info("page not up to date locked");
 
 		/* Did it get truncated before we got the lock? */
 		if (!page->mapping) {
-			pr_info("unlocked page because it was truncated");
+			//pr_info("unlocked page because it was truncated");
 			unlock_page(page);
 			put_page(page);
 			if(temp_status.page_lock){
@@ -1303,9 +1297,15 @@ page_not_up_to_date_locked:
 
 		/* Did somebody else fill it already? */
 		if (PageUptodate(page)) {
-			pr_info("unlocked since someone else filled the page");
+			//pr_info("unlocked since someone else filled the page");
 
 			unlock_page(page);
+			if(temp_status.page_lock){
+
+				up_write(&(temp_status.state->rwsem));
+			}else{
+				up_read(&(temp_status.state->rwsem));
+			}
 
 			goto page_ok;
 		}
@@ -1319,8 +1319,8 @@ readpage:
 		ClearPageError(page);
 		/* Start the actual read. The read will unlock the page. */
 		error = mapping->a_ops->readpage(filp, page);
-		pr_info("unlocked after readpage");
-
+		//pr_info("unlocked after readpage");
+		
 		//TODO might have to delete from hashtable?
 
 		if (unlikely(error)) {
@@ -1334,7 +1334,7 @@ readpage:
 
 		if (!PageUptodate(page)) {
 			error = lock_page_killable(page);
-			pr_info("locked page killable in readpage");
+			//pr_info("locked page killable in readpage");
 
 			if (unlikely(error))
 				goto readpage_error;
@@ -1344,23 +1344,28 @@ readpage:
 					 * invalidate_mapping_pages got it
 					 */
 					unlock_page(page);
-					pr_info("unlocked page due to invalidate mapping");
+					//pr_info("unlocked page due to invalidate mapping");
 
 					put_page(page);
 					goto find_page;
 				}
-				pr_info("readpage error unlock page");
+				//pr_info("readpage error unlock page");
 				unlock_page(page);
 				//shrink_readahead_size_eio(filp, ra);
 				error = -EIO;
 				goto readpage_error;
 			}
-			pr_info("page is now up to date unlocked");
+			//pr_info("page is now up to date unlocked");
 
 			unlock_page(page);
 
 		}
+		if(temp_status.page_lock){
 
+			up_write(&(temp_status.state->rwsem));
+		}else{
+			up_read(&(temp_status.state->rwsem));
+		}
 		goto page_ok;
 
 readpage_error:
@@ -1389,7 +1394,7 @@ no_cached_page:
 		}
 		error = add_to_page_cache_lru(page, mapping, index,
 				mapping_gfp_constraint(mapping, GFP_KERNEL));
-		pr_info("allocating page and locking it");
+		//pr_info("allocating page and locking it");
 
 		if (error) {
 
@@ -1412,12 +1417,7 @@ no_cached_page:
 would_block:
 	error = -EAGAIN;
 out:
-	if(temp_status.page_lock){
 
-		up_write(&(temp_status.state->rwsem));
-	}else{
-		up_read(&(temp_status.state->rwsem));
-	}
 	ra->prev_pos = prev_index;
 	ra->prev_pos <<= PAGE_SHIFT;
 	ra->prev_pos |= prev_offset;
@@ -1795,6 +1795,7 @@ again:
 			(PAGE_SIZE * (currentpage));
 
 		struct page_lock_status temp = acquire_page_lock(file, inode, currentpage, inode_pages_address, mapping, WRITE);
+
 		//forcing unlock
 		int retrycount = 0;
 		goto start;
@@ -1802,8 +1803,11 @@ again:
 
 network_retry:
 		retrycount++;	
-		pr_info("retrying %d", retrycount);
+		//pr_info("retrying %d", retrycount);
 		temp = acquire_page_lock(file, inode, currentpage, inode_pages_address, mapping, WRITE);
+
+		
+
 
 		//if page lock was acquired in write mode, then we have to update the remote state
 
@@ -1814,21 +1818,21 @@ start:
 
 		status = a_ops->write_begin(file, mapping, pos, bytes, flags,
 						&page, &fsdata);
-		pr_info("on write inode %d, page %d locked", inode->i_ino, currentpage);
+		//pr_info("on write inode %d, page %d locked", inode->i_ino, currentpage);
 
 		if (unlikely(status < 0)){
-			pr_info("status less than zero %d %d", inode->i_ino, currentpage);
+			//pr_info("status less than zero %d %d", inode->i_ino, currentpage);
 
 			break;
 		}
-		pr_info("after checking the status");
+		//pr_info("after checking the status");
 
 		if (mapping_writably_mapped(mapping)){
 			flush_dcache_page(page);
-			pr_info("after flushing dcache");
+			//pr_info("after flushing dcache");
 
 		}
-		pr_info("after checking to write page");
+		//pr_info("after checking to write page");
 
 	
 		/*	
@@ -1860,15 +1864,15 @@ start:
 
 
 		}*/
-		pr_info("before temp.old_state check");
+		//pr_info("before temp.old_state check");
 		bool result = true;
 		if (temp.old_state < WRITE){
-			pr_info("less than write");
+			//pr_info("less than write");
 
 			if(temp.old_state < READ){
 				//request access to page and then read the page 
 				//if we don't have in read mode then we are missing data
-				pr_info("less than read");
+				//pr_info("less than read");
 
 				result = invalidate_page_write(page, file, inode, currentpage, true);
 			}else{
@@ -1883,32 +1887,29 @@ start:
 			}else{
 				up_read(&(temp.state->rwsem));
 			}
-
 			goto network_retry;
 		}
-		pr_info("after invalidate page write");
+		//pr_info("after invalidate page write");
 	
 
 		//invalidate_page_write(page, file, inode, currentpage, false);
 
 
 		copied = iov_iter_copy_from_user_atomic(page, i, offset, bytes);
-		pr_info("after copy from user");
+		//pr_info("after copy from user");
 
 		flush_dcache_page(page);
-		pr_info("after flush dcache 2");
+		//pr_info("after flush dcache 2");
 
 		status = a_ops->write_end(file, mapping, pos, bytes, copied,
 						page, fsdata);
-		pr_info("on write inode %d, page %d unlocked", inode->i_ino, currentpage);
+		//pr_info("on write inode %d, page %d unlocked", inode->i_ino, currentpage);
 		//unlocking the page here
-			if(temp.page_lock){
-				up_write(&(temp.state->rwsem));
-			}else{
-				up_read(&(temp.state->rwsem));
-			}
-
-
+		if(temp.page_lock){
+			up_write(&(temp.state->rwsem));
+		}else{
+			up_read(&(temp.state->rwsem));
+		}
 
 		if (unlikely(status < 0))
 			break;
