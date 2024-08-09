@@ -1130,8 +1130,8 @@ static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
 		inode_pages_address = shmem_address[mapping->host->i_ino] +
 			(PAGE_SIZE * (index));
 
-		temp_status = acquire_page_lock(filp, mapping->host, index, inode_pages_address, mapping, READ);
-	up_write(&(temp_status.state->rwsem));
+	temp_status = acquire_page_lock(filp, mapping->host, index, inode_pages_address, mapping, READ);
+	//up_write(&(temp_status.state->rwsem));
 	pr_info("start operating on inode %d page %d", mapping->host->i_ino, index);
 
 find_page:
@@ -1270,9 +1270,9 @@ page_ok:
 		}
 		if(temp_status.page_lock){
 
-			//up_write(&(temp_status.state->rwsem));
+			up_write(&(temp_status.state->rwsem));
 		}else{
-			//up_read(&(temp_status.state->rwsem));
+			up_read(&(temp_status.state->rwsem));
 		}
 		continue;
 
@@ -1294,9 +1294,9 @@ page_not_up_to_date_locked:
 			put_page(page);
 			if(temp_status.page_lock){
 
-			//	up_write(&(temp_status.state->rwsem));
+				up_write(&(temp_status.state->rwsem));
 			}else{
-			//	up_read(&(temp_status.state->rwsem));
+				up_read(&(temp_status.state->rwsem));
 			}
 			continue;
 		}
@@ -1414,9 +1414,9 @@ would_block:
 out:
 	if(temp_status.page_lock){
 
-		//up_write(&(temp_status.state->rwsem));
+		up_write(&(temp_status.state->rwsem));
 	}else{
-		//up_read(&(temp_status.state->rwsem));
+		up_read(&(temp_status.state->rwsem));
 	}
 	ra->prev_pos = prev_index;
 	ra->prev_pos <<= PAGE_SHIFT;
@@ -1794,24 +1794,23 @@ again:
 		inode_pages_address = shmem_address[inode->i_ino] +
 			(PAGE_SIZE * (currentpage));
 
-
-network_retry:
-		pr_info("retrying?");
 		struct page_lock_status temp = acquire_page_lock(file, inode, currentpage, inode_pages_address, mapping, WRITE);
 		//forcing unlock
-		if(temp.page_lock){
-			up_write(&(temp.state->rwsem));
-		}else{
-			up_read(&(temp.state->rwsem));
-		}
+		int retrycount = 0;
+		goto start;
 
+
+network_retry:
+		retrycount++;	
+		pr_info("retrying %d", retrycount);
+		temp = acquire_page_lock(file, inode, currentpage, inode_pages_address, mapping, WRITE);
 
 		//if page lock was acquired in write mode, then we have to update the remote state
 
 		//need to copy in the most up to date version of the page
 
 
-
+start:
 
 		status = a_ops->write_begin(file, mapping, pos, bytes, flags,
 						&page, &fsdata);
@@ -1862,7 +1861,7 @@ network_retry:
 
 		}*/
 		pr_info("before temp.old_state check");
-		bool result = false;
+		bool result = true;
 		if (temp.old_state < WRITE){
 			pr_info("less than write");
 
@@ -1871,14 +1870,20 @@ network_retry:
 				//if we don't have in read mode then we are missing data
 				pr_info("less than read");
 
-				invalidate_page_write(page, file, inode, currentpage, true);
+				result = invalidate_page_write(page, file, inode, currentpage, true);
 			}else{
-				invalidate_page_write(page, file, inode, currentpage, false);
+				result = invalidate_page_write(page, file, inode, currentpage, false);
 			}
 		}
 		if(result == false){
 			//we failed to gain access, could be invalidated
 			unlock_page(page);
+			if(temp.page_lock){
+				up_write(&(temp.state->rwsem));
+			}else{
+				up_read(&(temp.state->rwsem));
+			}
+
 			goto network_retry;
 		}
 		pr_info("after invalidate page write");
@@ -1897,6 +1902,13 @@ network_retry:
 						page, fsdata);
 		pr_info("on write inode %d, page %d unlocked", inode->i_ino, currentpage);
 		//unlocking the page here
+			if(temp.page_lock){
+				up_write(&(temp.state->rwsem));
+			}else{
+				up_read(&(temp.state->rwsem));
+			}
+
+
 
 		if (unlikely(status < 0))
 			break;
