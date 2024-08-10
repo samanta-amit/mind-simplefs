@@ -1136,7 +1136,7 @@ static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
 		//have to declare this up here
 		inode_pages_address = shmem_address[mapping->host->i_ino] +
 			(PAGE_SIZE * (index));
-		int retry = 0;
+		int retrycount = 0;
 retry:
 
 		pr_info("trying to read page");
@@ -1145,8 +1145,8 @@ retry:
 		pr_info("temp state is %d", temp_status.state->state);
 		pr_info("temp old state was %d", temp_status.old_state);
 
-		if(temp_status.old_state == 0){
-			pr_info("temp status was zero");
+		if(temp_status.old_state <= 0){
+			pr_info("temp status was less than or equal to zero");
 			//this means that we have to go to remote
 			page = find_get_page(mapping, index);
 			if (!page) {
@@ -1169,18 +1169,20 @@ retry:
 			//then we should be able to proceed as usual	
 			page = find_get_page(mapping,index);
 			pr_info("found page %d", page);
-			if(page){
+			if(!page){
 				pr_info("this shouldn't happen 2");
 				//shouldn't happen because currently 
 				//blocking all concurrent local operations
 				//on this page
 				//go remote
-				lock_page(page);	
-				goto readpage;	
+				//lock_page(page);	
+				goto no_cached_page;	
 			}	
 			if(!PageUptodate(page)){
-				pr_info("this shouldn't happen 3");
-				BUG_ON(1);
+				pr_info("this shouldn't happen 3 %d ", retrycount);
+				//BUG_ON(1);
+				goto readpage;	
+
 			}
 			if (!page->mapping){
 				pr_info("page truncated");
@@ -1300,6 +1302,7 @@ readpage:
 			}else{
 				up_read(&(temp_status.state->rwsem));
 			}
+			retrycount++;
 			goto retry;
 		}
 		//TODO might have to delete from hashtable?
@@ -1810,7 +1813,8 @@ start:
 		status = a_ops->write_begin(file, mapping, pos, bytes, flags,
 						&page, &fsdata);
 		//pr_info("on write inode %d, page %d locked", inode->i_ino, currentpage);
-
+	
+		pr_info("trying to write to page %d", page);
 		if (unlikely(status < 0)){
 			//pr_info("status less than zero %d %d", inode->i_ino, currentpage);
 
@@ -1858,12 +1862,12 @@ start:
 		//pr_info("before temp.old_state check");
 		bool result = true;
 		if (temp.old_state < WRITE){
-			//pr_info("less than write");
+			pr_info("less than write");
 
 			if(temp.old_state < READ){
 				//request access to page and then read the page 
 				//if we don't have in read mode then we are missing data
-				//pr_info("less than read");
+				pr_info("less than read");
 
 				result = invalidate_page_write(page, file, inode, currentpage, true);
 			}else{
@@ -1928,6 +1932,7 @@ start:
 		balance_dirty_pages_ratelimited(mapping);
 	} while (iov_iter_count(i));
 
+	pr_info("amount written %d", written);
 	return written ? written : status;
 }
 
