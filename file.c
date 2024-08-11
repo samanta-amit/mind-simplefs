@@ -194,23 +194,27 @@ struct page_lock_status acquire_page_lock(struct file * file, struct inode * ino
 				//invalidate_page_write(file, inode, currentpage);
 				pr_info("incrementing coherence state");	
 				coherence_state->state = mode;
-
 			}
 		}
 		up_write(&hash_page_rwsem);
 	}else{
 		pr_info("found page in hashmap");
-		down_write(&(coherence_state->rwsem));
-		page_write_locked = 1;
-		up_read(&hash_page_rwsem);
-		old_state = coherence_state->state;
+		down_read(&(coherence_state->rwsem));
+		page_write_locked = 0; //set to zero for read mode
 		if(coherence_state->state < mode){
-			//TODO make sure current page is correct
-			//invalidate_page_write(file, inode, currentpage);
+			up_read(&(coherence_state->rwsem));
+			down_write(&(coherence_state->rwsem));//write mode if we need to upgrade
+			up_read(&hash_page_rwsem);
+			old_state = coherence_state->state;
+			page_write_locked = 1; //set to zero for read mode
 			pr_info("incrementing coherence state");	
 			coherence_state->state = mode;
-		}else{
+
 		}
+
+		up_read(&hash_page_rwsem);
+		old_state = coherence_state->state;
+
 	}
 
 	//TODO is this okay? 	
@@ -1155,6 +1159,8 @@ retry:
 			}else if(!PageUptodate(page)){
 				//means that the page was evicted
 				pr_info("page wasn't up to date");
+				lock_page(page);
+				unlock_page(page);
 				goto readpage;	
 			}else{
 				pr_info("this case shouldn't have happened");
@@ -1181,6 +1187,9 @@ retry:
 			if(!PageUptodate(page)){
 				pr_info("this shouldn't happen 3 %d ", retrycount);
 				//BUG_ON(1);
+				lock_page(page);
+				unlock_page(page);
+
 				goto readpage;	
 
 			}
@@ -1296,6 +1305,9 @@ readpage:
 		error = mapping->a_ops->readpage(filp, page);
 		//pr_info("unlocked after readpage");
 		if(error == -1337){
+
+			//reset the status
+			temp_status.state->state = temp_status.old_state;
 			if(temp_status.page_lock){
 
 				up_write(&(temp_status.state->rwsem));
@@ -1876,7 +1888,9 @@ start:
 		}
 		if(result == false){
 			//we failed to gain access, could be invalidated
-			unlock_page(page);
+			//reset to old state so we can try again
+			temp.state->state = temp.old_state;
+			unlock_page(page); //TODO this might not always be the correct thing to do?
 			if(temp.page_lock){
 				up_write(&(temp.state->rwsem));
 			}else{
