@@ -615,7 +615,6 @@ do {
  */
 static int simplefs_readpage(struct file *file, struct page *page)
 {
-	pr_info("got into readpage");
 
 	struct buffer_head bh;
 	uintptr_t inode_pages_address;
@@ -914,7 +913,6 @@ static int simplefs_write_begin(struct file *file,
 
     struct inode *inode = file->f_inode;
     //atomic_inc(&write_count);
-    //pr_info("total writes %d", write_count.counter);
     //TODO make sure that the current page thing is correct
     uintptr_t inode_pages_address = shmem_address[mapping->host->i_ino] + (PAGE_SIZE * (currentpage));
 	int table_write_locked = 0;
@@ -1097,7 +1095,6 @@ static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
 		unsigned long nr, ret;
 
 		cond_resched();
-		pr_info("started buffered read");
 		inode_pages_address = shmem_address[mapping->host->i_ino] +
 			(PAGE_SIZE * (index));
 find_page:
@@ -1122,8 +1119,8 @@ find_page:
 					ra, filp, page,
 					index, last_index - index);
 		}
-		if(!PageRemoteValid){
-			pr_info("page not in shared or modified mode");
+		if(!PageRemoteValid(page)){
+			//pr_info("page not in shared or modified mode");
 			goto page_not_up_to_date;
 			//follow steps here similar to PageUptodate
 		}
@@ -1141,19 +1138,25 @@ find_page:
 			error = wait_on_page_locked_killable(page);
 			if (unlikely(error))
 				goto readpage_error;
-			if(!PageRemoteValid){
-				pr_info("page now not valid");
+			if(!PageRemoteValid(page)){
+				//pr_info("page now not valid");
 			}
 			if (PageUptodate(page))
 				goto page_ok;
 
 			if (inode->i_blkbits == PAGE_SHIFT ||
 					!mapping->a_ops->is_partially_uptodate)
+				//pr_info("page partially up to date");
+
 				goto page_not_up_to_date;
 			/* pipes can't handle partially uptodate pages */
 			if (unlikely(iter->type & ITER_PIPE))
+				//pr_info("pipes");
+
 				goto page_not_up_to_date;
 			if (!trylock_page(page))
+				//pr_info("trylock failed");
+
 				goto page_not_up_to_date;
 			/* Did it get truncated before we got the lock? */
 			if (!page->mapping)
@@ -1242,7 +1245,7 @@ page_ok:
 page_not_up_to_date:
 		/* Get exclusive access to the page ... */
 
-		pr_info("acquire page lock 1");
+		//pr_info("acquire page lock 1");
 		temp_status = acquire_page_lock(filp, mapping->host, index, inode_pages_address, mapping, READ);
 		error = lock_page_killable(page);
 		if (unlikely(error))
@@ -1261,6 +1264,7 @@ page_not_up_to_date_locked:
 			continue;
 		}
 		if(!PageRemoteValid(page)){
+			//pr_info("not up to date lock not remote valid");
 			goto readpage;
 		}
 
@@ -1303,7 +1307,7 @@ readpage:
 		}
 
 		if(!PageRemoteValid(page)){
-			pr_info("should we handle this case?");
+			//pr_info("should we handle this case?");
 			goto find_page;
 			//TODO treat this as failing to gain remote access
 			//go to the findpage thing and try again
@@ -1338,7 +1342,7 @@ readpage_error:
 		goto out;
 
 no_cached_page:
-		pr_info("acquire page lock 2");
+		//pr_info("acquire page lock 2");
 		temp_status = acquire_page_lock(filp, mapping->host, index, inode_pages_address, mapping, READ);
 
 		/*
@@ -1347,7 +1351,7 @@ no_cached_page:
 		 */
 		page = page_cache_alloc(mapping);
 		if (!page) {
-			pr_info("DIDN'T HANDLE OUT OF MEMORY");
+			//pr_info("DIDN'T HANDLE OUT OF MEMORY");
 			error = -ENOMEM;
 			goto out;
 		}
@@ -1630,10 +1634,11 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		//perform page invalidation stuff here
 		shmem_invalidate_page_write(coherence_state->mapping, testp, coherence_state->pagenum, inv_argv);
 		//delete_from_page_cache(testp);
-	
+		//pr_info("before page invalidated %d", PageRemoteValid(testp));
+
 		//mark page as invalid from remote system
 		ClearPageRemoteValid(testp);
-
+		//pr_info("page invalidated %d", PageRemoteValid(testp));
 		ClearPageUptodate(testp);
 		
 		//ClearPageDirty(testp);
@@ -1675,7 +1680,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
 
-	pr_info("started invalidation");
+	//pr_info("started invalidation");
     down_read(&hash_page_rwsem);
     struct shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
 
@@ -1689,7 +1694,7 @@ u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    up_read(&hash_page_rwsem);
 
     }
-    pr_info("ended invalidation");
+    //pr_info("ended invalidation");
     return 1024;
 }
 
@@ -1744,7 +1749,6 @@ again:
 
 retry:
 		currentpage = currentpage;
-		pr_info("acquire page lock 3");
 		struct page_lock_status temp = acquire_page_lock(file, inode, currentpage, inode_pages_address, mapping, WRITE);
 		//if page lock was acquired in write mode, then we have to update the remote state
 
@@ -1976,7 +1980,7 @@ ssize_t simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *fr
 	if(!write){
 		//double check to make sure the size didn't change
 		if ((new_size > cur_size)|| (iocb->ki_flags & IOCB_APPEND)){
-			pr_info("size will change");
+			//pr_info("size will change");
 			up_write(inode_rwlock[inode->i_ino]);	
 			write = true;
 			continue;
