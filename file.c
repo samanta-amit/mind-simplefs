@@ -1811,6 +1811,7 @@ retry:
 			}
 		}
 		if(result == -1){
+			temp.state->state = temp.old_state;
 			if(temp.page_lock){
 				up_write(&(temp.state->rwsem));
 			}else{
