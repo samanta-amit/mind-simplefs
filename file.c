@@ -1811,6 +1811,8 @@ retry:
 			}
 		}
 		if(result == -1){
+			//should probably only do this when we have it
+			//in write mode
 			temp.state->state = temp.old_state;
 			if(temp.page_lock){
 				up_write(&(temp.state->rwsem));
