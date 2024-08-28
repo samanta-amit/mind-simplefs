@@ -345,7 +345,8 @@ static int mind_fetch_page_write(
         pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
         if(r <= 0){
                 cancel_waiting_for_nack(wait_node);
-		BUG_ON(1);
+		return -1;
+		//BUG_ON(1);
 
 	}
         r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
@@ -679,6 +680,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 			SetPageUptodate(page);
 
 			BUG_ON(!PageUptodate(page));
+			SetPageRemoteValid(page);
 
 
 
@@ -1097,9 +1099,9 @@ static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
 	pgoff_t prev_index;
 	unsigned long offset;      /* offset into pagecache page */
 	unsigned int prev_offset;
-	int error = 0;
 	uintptr_t inode_pages_address;
-
+	int error = 0;
+	struct page_lock_status temp_status;
 	if (unlikely(*ppos >= inode->i_sb->s_maxbytes))
 		return 0;
 	iov_iter_truncate(iter, inode->i_sb->s_maxbytes);
@@ -1109,7 +1111,7 @@ static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
 	prev_offset = ra->prev_pos & (PAGE_SIZE-1);
 	last_index = (*ppos + iter->count + PAGE_SIZE-1) >> PAGE_SHIFT;
 	offset = *ppos & ~PAGE_MASK;
-	struct page_lock_status temp_status;
+
 	for (;;) {
 		struct page *page;
 		pgoff_t end_index;
@@ -1117,75 +1119,77 @@ static ssize_t simplefs_generic_file_buffered_read(struct kiocb *iocb,
 		unsigned long nr, ret;
 
 		cond_resched();
-
-		//have to declare this up here
 		inode_pages_address = shmem_address[mapping->host->i_ino] +
 			(PAGE_SIZE * (index));
-		int retrycount = 0;
-retry:
-
-		//ideal changes are that we first check the bit on the page 
-		//to determine if we have access to it
-		//(similar but different to the pageuptodate bit)
-		//this allows us to be certain on if we should wait for a write
-		//or if we are invalidated
-
-
-
-
-		temp_status = acquire_page_lock(filp, mapping->host, index, inode_pages_address, mapping, READ);
-
-		if(temp_status.old_state <= 0){
-			
-
-
-			//this means that we have to go to remote
-			page = find_get_page(mapping, index);
-			if (!page) {
-				goto no_cached_page;	
-			}else if(!PageUptodate(page)){
-				//means that the page was evicted
-				lock_page(page);	
-				goto readpage;	
-			}else{
-			}
-			goto no_cached_page;
-			
-		}else{
-			//this means that we should have some sort of copy locally
-		
-			//since we are currently synced with local writers through the page lock
-			//then we should be able to proceed as usual	
-			page = find_get_page(mapping,index);
-			if(!page){
-				//shouldn't happen because currently 
-				//blocking all concurrent local operations
-				//on this page
-				//go remote
-				//lock_page(page);	
-				goto no_cached_page;	
-			}	
-			if(!PageUptodate(page)){
-				//BUG_ON(1);
-				lock_page(page);
-
-				goto readpage;	
-
-			}
-			if (!page->mapping){
-				BUG_ON(1);
-			}	/*
-			if (!mapping->a_ops->is_partially_uptodate(page,
-							offset, iter->count)){
-				BUG_ON(1);
-			}*/
-
-			//otherwise page is okay
-
-
-
+find_page:
+		if (fatal_signal_pending(current)) {
+			error = -EINTR;
+			goto out;
 		}
 
+		page = find_get_page(mapping, index);
+		if (!page) {
+			if (iocb->ki_flags & IOCB_NOWAIT)
+				goto would_block;
+			page_cache_sync_readahead(mapping,
+					ra, filp,
+					index, last_index - index);
+			page = find_get_page(mapping, index);
+			if (unlikely(page == NULL))
+				goto no_cached_page;
+		}
+		if (PageReadahead(page)) {
+			page_cache_async_readahead(mapping,
+					ra, filp, page,
+					index, last_index - index);
+		}
+		if(!PageRemoteValid(page)){
+			//pr_info("page not in shared or modified mode");
+			goto page_not_up_to_date;
+			//follow steps here similar to PageUptodate
+		}
+		if (!PageUptodate(page)) {
+			if (iocb->ki_flags & IOCB_NOWAIT) {
+				put_page(page);
+				goto would_block;
+			}
+
+			/*
+			 * See comment in do_read_cache_page on why
+			 * wait_on_page_locked is used to avoid unnecessarily
+			 * serialisations and why it's safe.
+			 */
+			error = wait_on_page_locked_killable(page);
+			if (unlikely(error))
+				goto readpage_error;
+			if(!PageRemoteValid(page)){
+				//pr_info("page now not valid");
+			}
+			if (PageUptodate(page))
+				goto page_ok;
+
+			if (inode->i_blkbits == PAGE_SHIFT ||
+					!mapping->a_ops->is_partially_uptodate)
+				//pr_info("page partially up to date");
+
+				goto page_not_up_to_date;
+			/* pipes can't handle partially uptodate pages */
+			if (unlikely(iter->type & ITER_PIPE))
+				//pr_info("pipes");
+
+				goto page_not_up_to_date;
+			if (!trylock_page(page))
+				//pr_info("trylock failed");
+
+				goto page_not_up_to_date;
+			/* Did it get truncated before we got the lock? */
+			if (!page->mapping)
+				goto page_not_up_to_date_locked;
+			if (!mapping->a_ops->is_partially_uptodate(page,
+							offset, iter->count))
+				goto page_not_up_to_date_locked;
+			unlock_page(page);
+		}
 page_ok:
 		/*
 		 * i_size must be checked after we know the page is Uptodate.
@@ -1203,7 +1207,9 @@ page_ok:
 		for(y=0; y < 160000000; y++){
 			x += y + y;
 		}	
+		pr_info("x value is %d", x);
 		isize = i_size_read(inode);
+		pr_info("after i size read");
 	*/	
 
 		isize = i_size_read(inode);
@@ -1258,15 +1264,45 @@ page_ok:
 			error = -EFAULT;
 			goto out;
 		}
-		if(temp_status.page_lock){
+		continue;
 
-			up_write(&(temp_status.state->rwsem));
-		}else{
-			up_read(&(temp_status.state->rwsem));
+page_not_up_to_date:
+		/* Get exclusive access to the page ... */
+
+		//pr_info("acquire page lock 1");
+		temp_status = acquire_page_lock(filp, mapping->host, index, inode_pages_address, mapping, READ);
+		error = lock_page_killable(page);
+		if (unlikely(error))
+			goto readpage_error;
+
+page_not_up_to_date_locked:
+		/* Did it get truncated before we got the lock? */
+		if (!page->mapping) {
+			unlock_page(page);
+			put_page(page);
+			if(temp_status.page_lock){
+				up_write(&(temp_status.state->rwsem));
+			}else{
+				up_read(&(temp_status.state->rwsem));
+			}
+			continue;
+		}
+		if(!PageRemoteValid(page)){
+			//pr_info("not up to date lock not remote valid");
+			goto readpage;
 		}
 
+		/* Did somebody else fill it already? */
+		if (PageUptodate(page)) {
 
-		continue;
+			unlock_page(page);
+			if(temp_status.page_lock){
+				up_write(&(temp_status.state->rwsem));
+			}else{
+				up_read(&(temp_status.state->rwsem));
+			}
+			goto page_ok;
+		}
 
 readpage:
 		/*
@@ -1277,21 +1313,14 @@ readpage:
 		ClearPageError(page);
 		/* Start the actual read. The read will unlock the page. */
 		error = mapping->a_ops->readpage(filp, page);
-		if(error == -1337){
-
-			//reset the status
-			temp_status.state->state = temp_status.old_state;
-			if(temp_status.page_lock){
-
-				up_write(&(temp_status.state->rwsem));
-			}else{
-				up_read(&(temp_status.state->rwsem));
-			}
-			retrycount++;
-			goto retry;
+		if(temp_status.page_lock){
+			up_write(&(temp_status.state->rwsem));
+		}else{
+			up_read(&(temp_status.state->rwsem));
 		}
-		//TODO might have to delete from hashtable?
-/*
+		if(error == -1337){
+			goto find_page;
+		}
 		if (unlikely(error)) {
 			if (error == AOP_TRUNCATED_PAGE) {
 				put_page(page);
@@ -1300,20 +1329,24 @@ readpage:
 			}
 			goto readpage_error;
 		}
-		*/
-		/*
+
+		if(!PageRemoteValid(page)){
+			//pr_info("should we handle this case?");
+			goto find_page;
+			//TODO treat this as failing to gain remote access
+			//go to the findpage thing and try again
+		}
+
 		if (!PageUptodate(page)) {
 			error = lock_page_killable(page);
-
 			if (unlikely(error))
 				goto readpage_error;
 			if (!PageUptodate(page)) {
 				if (page->mapping == NULL) {
-					//
-					 // invalidate_mapping_pages got it
-				//	
+					/*
+					 * invalidate_mapping_pages got it
+					 */
 					unlock_page(page);
-
 					put_page(page);
 					goto find_page;
 				}
@@ -1322,11 +1355,9 @@ readpage:
 				error = -EIO;
 				goto readpage_error;
 			}
-
 			unlock_page(page);
+		}
 
-		}*/
-		
 		goto page_ok;
 
 readpage_error:
@@ -1335,11 +1366,8 @@ readpage_error:
 		goto out;
 
 no_cached_page:
-
-
-		//have to sync with the hashtable thingy
-		//doing it out here means we won't risk deadlock 
-		//since it preserves the ordering
+		//pr_info("acquire page lock 2");
+		temp_status = acquire_page_lock(filp, mapping->host, index, inode_pages_address, mapping, READ);
 
 		/*
 		 * Ok, it wasn't cached, so we need to create a new
@@ -1347,42 +1375,32 @@ no_cached_page:
 		 */
 		page = page_cache_alloc(mapping);
 		if (!page) {
+			//pr_info("DIDN'T HANDLE OUT OF MEMORY");
 			error = -ENOMEM;
-			
-
-
 			goto out;
 		}
 		error = add_to_page_cache_lru(page, mapping, index,
 				mapping_gfp_constraint(mapping, GFP_KERNEL));
-
 		if (error) {
 			put_page(page);
-			//TODO might have to delete from hashtable?
-			
-
-
 			if (error == -EEXIST) {
 				error = 0;
-				//goto find_page;
+				if(temp_status.page_lock){
+
+					up_write(&(temp_status.state->rwsem));
+				}else{
+					up_read(&(temp_status.state->rwsem));
+				}
+				goto find_page;
 			}
-			pr_info("THIS IS PROBABLY BAD");
 			goto out;
 		}
 		goto readpage;
-
 	}
 
 would_block:
 	error = -EAGAIN;
 out:
-
-	if(temp_status.page_lock){
-		up_write(&(temp_status.state->rwsem));
-	}else{
-		up_read(&(temp_status.state->rwsem));
-	}
-
 	ra->prev_pos = prev_index;
 	ra->prev_pos <<= PAGE_SHIFT;
 	ra->prev_pos |= prev_offset;
@@ -1631,7 +1649,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		//radix_tree_lookup(&mapping->page_tree, coherence_state->pagenum);
 	if(pagep){
 
-		lock_page(pagep);
+		//lock_page(pagep);
 
 		if(!PageUptodate(pagep)){
 			pr_info("PAGE NOT UP TO DATE?");
@@ -1640,6 +1658,8 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		
 		//perform page invalidation stuff here
 		shmem_invalidate_page_write(coherence_state->mapping, testp, coherence_state->pagenum, inv_argv);
+		//mark page as invalid from remote system
+		ClearPageRemoteValid(testp);
 		//delete_from_page_cache(testp);
 		ClearPageUptodate(testp);
 		//ClearPageDirty(testp);
@@ -1647,7 +1667,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		coherence_state->state = 0;
 
 		//delete_from_page_cache(testp);
-		unlock_page(pagep);
+		//unlock_page(pagep);
 	}else{
 		struct page * testp = NULL;
 		//this can also be reached if something has been truncated
@@ -1698,7 +1718,6 @@ u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv_pointer)
     return 1024;
 }
 
-
 ssize_t simplefs_generic_perform_write(struct file *file,
 				struct iov_iter *i, loff_t pos)
 {
@@ -1747,30 +1766,19 @@ again:
 		inode_pages_address = shmem_address[inode->i_ino] +
 			(PAGE_SIZE * (currentpage));
 
+retry:
+		currentpage = currentpage;
 		struct page_lock_status temp = acquire_page_lock(file, inode, currentpage, inode_pages_address, mapping, WRITE);
-
-		//forcing unlock
-		int retrycount = 0;
-		goto start;
-
-
-network_retry:
-		retrycount++;	
-		temp = acquire_page_lock(file, inode, currentpage, inode_pages_address, mapping, WRITE);
-
-		
-
-
 		//if page lock was acquired in write mode, then we have to update the remote state
 
 		//need to copy in the most up to date version of the page
 
 
-start:
+
 
 		status = a_ops->write_begin(file, mapping, pos, bytes, flags,
 						&page, &fsdata);
-	
+
 		if (unlikely(status < 0)){
 
 			break;
@@ -1811,33 +1819,40 @@ start:
 
 
 		}*/
-		bool result = true;
+		int result = 0;
 		if (temp.old_state < WRITE){
-
 			if(temp.old_state < READ){
 				//request access to page and then read the page 
 				//if we don't have in read mode then we are missing data
-
 				result = invalidate_page_write(page, file, inode, currentpage, true);
 			}else{
 				result = invalidate_page_write(page, file, inode, currentpage, false);
 			}
 		}
-		if(result == false){
-			//we failed to gain access, could be invalidated
-			//reset to old state so we can try again
+		if(result == -1){
+			//should probably only do this when we have it
+			//in write mode
 			temp.state->state = temp.old_state;
-			unlock_page(page); //TODO this might not always be the correct thing to do?
 			if(temp.page_lock){
 				up_write(&(temp.state->rwsem));
 			}else{
 				up_read(&(temp.state->rwsem));
 			}
-			goto network_retry;
-		}
-	
+			ClearPageRemoteValid(page);
+			unlock_page(page);
 
-		//invalidate_page_write(page, file, inode, currentpage, false);
+			goto retry;
+
+		}
+
+		//TODO add retry on failure
+		//I think we should just unlock the rwsem 
+		//and not require invalidations to
+		//acquire the page lock
+		//they could just handle it as a read
+		SetPageRemoteValid(page);
+
+		//TODO on failure mark the page as not remote valid
 
 
 		copied = iov_iter_copy_from_user_atomic(page, i, offset, bytes);
@@ -1852,6 +1867,7 @@ start:
 		}else{
 			up_read(&(temp.state->rwsem));
 		}
+
 
 		if (unlikely(status < 0))
 			break;
@@ -1881,6 +1897,7 @@ start:
 
 	return written ? written : status;
 }
+
 
 ssize_t __simplefs_generic_file_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
