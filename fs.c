@@ -198,7 +198,7 @@ static int __init simplefs_init(void)
 
     if(!readAddress){
 	    pr_info("test allocation");
-            uintptr_t start_address = (uintptr_t)alloc_kshmem(5000 * PAGE_SIZE, DISAGG_KSHMEM_SERV_FS_ID);
+            uintptr_t start_address = (uintptr_t)alloc_kshmem(1000 * PAGE_SIZE, DISAGG_KSHMEM_SERV_FS_ID);
 	    uintptr_t current_address = start_address; 
 	    pr_info("finished test allocation %ld", current_address);
 

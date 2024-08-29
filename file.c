@@ -1524,6 +1524,7 @@ u64 page_shmem_address_check(void *addr, unsigned long size)
     if(coherence_state != NULL){
 	    return 1;
     }else{
+	    pr_info("couldn't find anyting to invalidate");
     }
 	
     return 0;
@@ -1692,7 +1693,7 @@ u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    up_write(&(coherence_state->rwsem)); //lock the page
     }else{
 	    up_read(&hash_page_rwsem);
-
+		pr_info("couldn't find anything to invalidate");
     }
     //pr_info("ended invalidation");
     return 1024;

@@ -392,7 +392,7 @@ extern unsigned long inode_lock_address;
 		}
 	}
 	*/
-	for(i = 0; i < 20; i++){
+	for(i = 0; i < FILE_COUNT; i++){
 		if(addr == inode_size_address[i]){
 
 			return 1;
@@ -403,7 +403,7 @@ extern unsigned long inode_lock_address;
 		return 1;
 	}
 
-	for(i = 0; i < 20; i++){
+	for(i = 0; i < FILE_COUNT; i++){
 		if(addr == new_inode_lock_address[i]){
 			return 1;
 		}
@@ -435,7 +435,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    }
     }
 	*/
-   for(i = 0; i < 20; i++){
+   for(i = 0; i < FILE_COUNT; i++){
 	    if(addr == inode_size_address[i]){
 			//struct timespec time = current_kernel_time();
 		
@@ -481,7 +481,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    return 1;
     }
 
-    for(i = 0; i < 20; i ++){    
+    for(i = 0; i < FILE_COUNT; i ++){    
 	    if(addr == new_inode_lock_address[i]){
 		    //down_write(&(remote_inode_locks[i]));  
 		    //spin_lock(spin_inode_lock[i]);
