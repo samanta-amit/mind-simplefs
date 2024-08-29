@@ -53,13 +53,13 @@ static const struct inode_operations simplefs_inode_ops;
 static const struct inode_operations symlink_inode_ops;
 
 
-extern unsigned long shmem_address[20];
-extern unsigned long inode_address[20];
+//extern unsigned long shmem_address[20];
+//extern unsigned long inode_address[20];
 extern unsigned long size_lock_address; 
 //extern unsigned long inode_lock_address; 
-extern unsigned long new_inode_lock_address[20];
+extern unsigned long new_inode_lock_address[FILE_COUNT];
 
-extern unsigned long inode_size_address[20];
+extern unsigned long inode_size_address[FILE_COUNT];
 extern struct super_block * super_block;
 extern spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 
@@ -73,15 +73,16 @@ struct rw_semaphore testlock;
 //struct rw_semaphore rw_inode_lock;
 //DECLARE_RWSEM(rw_inode_lock);
 
-unsigned int remote_lock_status[20] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //0 not held, 1 read mode, 2 write mode
-unsigned int inode_size_status[20] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //0 not held, 1 read mode, 2 write mode
+extern unsigned int remote_lock_status[FILE_COUNT];
+extern unsigned int inode_size_status[FILE_COUNT]; //0 not held, 1 read mode, 2 write mode
+
 
 
 //extern struct rw_semaphore size_locks[10];
-extern spinlock_t * spin_size_lock[20];
-extern struct rw_semaphore * size_rwlock[20];
+//extern spinlock_t * spin_size_lock[20];
+extern struct rw_semaphore * size_rwlock[FILE_COUNT];
 //extern spinlock_t * spin_inode_lock[10];
-extern struct rw_semaphore * inode_rwlock[20];
+extern struct rw_semaphore * inode_rwlock[FILE_COUNT];
 
 
 //DECLARE_RWSEM(rw_size_lock);

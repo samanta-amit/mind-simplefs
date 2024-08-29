@@ -130,7 +130,7 @@ static struct shmem_coherence_state * shmem_in_hashmap(unsigned long shmem_addr)
 
 
 extern unsigned long shmem_address[20];
-extern unsigned long inode_address[20];
+//extern unsigned long inode_address[20];
 static bool invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page, bool readpage);
 
 

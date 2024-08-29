@@ -20,33 +20,40 @@
 #include "simplefs.h"
 
 
+
+
 unsigned long sharedaddress;
-unsigned long shmem_address[20];
-unsigned long inode_address[20];
-unsigned long inode_size_address[20];
+unsigned long shmem_address[FILE_SIZE];
+unsigned long inode_address[FILE_COUNT];
+unsigned long inode_size_address[FILE_COUNT];
 
 unsigned long size_lock_address;
 unsigned long inode_lock_address;
-unsigned long new_inode_lock_address[20];
+unsigned long new_inode_lock_address[FILE_COUNT];
 //unsigned long combined_address[52];
 unsigned long combined_address[1];
+unsigned int remote_lock_status[FILE_COUNT]; 
+unsigned int inode_size_status[FILE_COUNT];//0 not held, 1 read mode, 2 write mode
+
 
 //struct spinlock_t size_locks[10];
-struct rw_semaphore size_locks[20];
-struct rw_semaphore remote_inode_locks[20];
+//struct rw_semaphore size_locks[20];
+//struct rw_semaphore remote_inode_locks[20];
 struct lock_class_key i_size_key;
 struct lock_class_key i_remote_key;
 
+/*
 DEFINE_SPINLOCK(s0);DEFINE_SPINLOCK(s1);DEFINE_SPINLOCK(s2);DEFINE_SPINLOCK(s3);
 DEFINE_SPINLOCK(s4);DEFINE_SPINLOCK(s5);DEFINE_SPINLOCK(s6);DEFINE_SPINLOCK(s7);
 DEFINE_SPINLOCK(spin8);DEFINE_SPINLOCK(s9);
 DEFINE_SPINLOCK(s10);DEFINE_SPINLOCK(s11);DEFINE_SPINLOCK(s12);DEFINE_SPINLOCK(s13);
 DEFINE_SPINLOCK(s14);DEFINE_SPINLOCK(s15);DEFINE_SPINLOCK(spin16);DEFINE_SPINLOCK(s17);
 DEFINE_SPINLOCK(spin18);DEFINE_SPINLOCK(s19);
+*/
 
+//spinlock_t * spin_size_lock[20] = {&s0, &s1, &s2, &s3, &s4,&s5,&s6,&s7,&spin8,&s9,&s10, &s11, &s12, &s13, &s14,&s15,&spin16,&s17,&spin18,&s19}; 
 
-spinlock_t * spin_size_lock[20] = {&s0, &s1, &s2, &s3, &s4,&s5,&s6,&s7,&spin8,&s9,&s10, &s11, &s12, &s13, &s14,&s15,&spin16,&s17,&spin18,&s19}; 
-
+/*
 DECLARE_RWSEM(srw0);
 DECLARE_RWSEM(srw1);
 DECLARE_RWSEM(srw2);
@@ -67,8 +74,9 @@ DECLARE_RWSEM(srw16);
 DECLARE_RWSEM(srw17);
 DECLARE_RWSEM(srw18);
 DECLARE_RWSEM(srw19);
-
-struct rw_semaphore * size_rwlock[20] = {&srw0,&srw1,&srw2,&srw3,&srw4,&srw5,&srw6,&srw7,&srw8,&srw9, &srw10,&srw11,&srw12,&srw13,&srw14,&srw15,&srw16,&srw17,&srw18,&srw19};
+*/
+struct rw_semaphore size_test_rwlock[20];
+struct rw_semaphore * size_rwlock[20]; //= {&srw0,&srw1,&srw2,&srw3,&srw4,&srw5,&srw6,&srw7,&srw8,&srw9, &srw10,&srw11,&srw12,&srw13,&srw14,&srw15,&srw16,&srw17,&srw18,&srw19};
 
 
 /*
@@ -78,7 +86,7 @@ DEFINE_SPINLOCK(l8);DEFINE_SPINLOCK(l9);
 
 spinlock_t * spin_inode_lock[10] = {&l0, &l1, &l2, &l3, &l4,&l5,&l6,&l7,&l8,&l9}; 
 */
-DECLARE_RWSEM(l0);
+/*DECLARE_RWSEM(l0);
 DECLARE_RWSEM(l1);
 DECLARE_RWSEM(l2);
 DECLARE_RWSEM(l3);
@@ -98,9 +106,9 @@ DECLARE_RWSEM(l16);
 DECLARE_RWSEM(l17);
 DECLARE_RWSEM(l18);
 DECLARE_RWSEM(l19);
-
-
-struct rw_semaphore * inode_rwlock[20] = {&l0,&l1,&l2,&l3,&l4,&l5,&l6,&l7,&l8,&l9, &l10,&l11,&l12,&l13,&l14,&l15,&l16,&l17,&l18,&l19};
+*/
+struct rw_semaphore inode_test_rwlock[20];
+struct rw_semaphore * inode_rwlock[20];// = {&l0,&l1,&l2,&l3,&l4,&l5,&l6,&l7,&l8,&l9, &l10,&l11,&l12,&l13,&l14,&l15,&l16,&l17,&l18,&l19};
 
 
 
@@ -154,7 +162,7 @@ static int __init simplefs_init(void)
     set_shmem_address_check(shmem_address_check);
     int i;
     int ret;
-    u64 page_alloc_size = sizeof(20 * PAGE_SIZE);
+    u64 page_alloc_size = sizeof(FILE_SIZE * PAGE_SIZE);
     u64 alloc_size = sizeof(1 * PAGE_SIZE);
 
     pr_info("loading simplefs\n");
@@ -164,15 +172,24 @@ static int __init simplefs_init(void)
 
     //lock and status init
     init_rwsem(&hash_page_rwsem);
-    for(i = 0; i < 20; i++){
-	    init_rwsem(&(size_locks[i]));
-	    lockdep_set_class(&(size_locks[i]), i_size_key);
-	    init_rwsem(&(remote_inode_locks[i]));
-	    lockdep_set_class(&(remote_inode_locks[i]), i_remote_key);
+    for(i = 0; i < FILE_COUNT; i++){
+	    //init_rwsem(&(size_locks[i]));
+	    //lockdep_set_class(&(size_locks[i]), i_size_key);
+	    //init_rwsem(&(remote_inode_locks[i]));
+	    //lockdep_set_class(&(remote_inode_locks[i]), i_remote_key);
 	    //spin_lock_init((spin_inode_lock[i]));
-	    spin_lock_init((spin_size_lock[i]));
-	    init_rwsem((inode_rwlock[i]));
-	    init_rwsem((size_rwlock[i]));
+	    //spin_lock_init((spin_size_lock[i]));
+	    //init_rwsem((inode_rwlock[i]));
+	    //init_rwsem((size_rwlock[i]));
+	    
+	    
+	    //testing dynamic allocation (again)
+    	    init_rwsem(&(size_test_rwlock[i]));
+	    size_rwlock[i] = &(size_test_rwlock[i]);
+    	    init_rwsem(&(inode_test_rwlock[i]));
+	    inode_rwlock[i] = &(inode_test_rwlock[i]);
+	    remote_lock_status[i] = 0; 
+	    inode_size_status[i] = 0;
 
     }
 
@@ -181,14 +198,14 @@ static int __init simplefs_init(void)
 
     if(!readAddress){
 	    pr_info("test allocation");
-            uintptr_t start_address = (uintptr_t)alloc_kshmem(1000 * PAGE_SIZE, DISAGG_KSHMEM_SERV_FS_ID);
+            uintptr_t start_address = (uintptr_t)alloc_kshmem(5000 * PAGE_SIZE, DISAGG_KSHMEM_SERV_FS_ID);
 	    uintptr_t current_address = start_address; 
 	    pr_info("finished test allocation %ld", current_address);
 
 	    pr_info("addresses:");
-	    for(i = 0; i < 20; i++){
+	    for(i = 0; i < FILE_COUNT; i++){
 		    shmem_address[i] = current_address; 
-		    current_address += 20 * PAGE_SIZE;
+		    current_address += FILE_SIZE * PAGE_SIZE;
 		    pr_info("%ld, ", shmem_address[i]);
 	    }
             
@@ -217,7 +234,7 @@ static int __init simplefs_init(void)
 	    pr_info("\n");
 
 	    pr_info("inode addresses:");
-            for(i = 0; i < 20; i++){
+            for(i = 0; i < FILE_COUNT; i++){
                     inode_address[i] = current_address;  //(uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
 		    current_address += PAGE_SIZE;
                     pr_info("%ld, ", inode_address[i]);
@@ -256,7 +273,7 @@ static int __init simplefs_init(void)
 
 
 	pr_info("inode size addresses:");
-	for(i = 0; i < 20; i++){
+	for(i = 0; i < FILE_COUNT; i++){
 		inode_size_address[i] = current_address;//(uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
 		current_address += PAGE_SIZE;
 		pr_info("%ld, ", inode_size_address[i]);
@@ -288,7 +305,7 @@ static int __init simplefs_init(void)
 	       );
 
 	pr_info("new inode lock addresses:");
-	for(i = 0; i < 20; i++){
+	for(i = 0; i < FILE_COUNT; i++){
 		new_inode_lock_address[i] = inode_address[i];
 		//new_inode_lock_address[i] = (uintptr_t)alloc_kshmem(alloc_size, DISAGG_KSHMEM_SERV_FS_ID);
 		pr_info("%ld, ", new_inode_lock_address[i]);
@@ -328,18 +345,18 @@ static int __init simplefs_init(void)
 
             uintptr_t start_address = combined_address[0]; 
 	    uintptr_t current_address = start_address; 
-	    for(i = 0; i < 20; i++){
+	    for(i = 0; i < FILE_COUNT; i++){
 	    	shmem_address[i] = current_address;
-	       current_address += 20 * PAGE_SIZE;	
+	       current_address += FILE_SIZE * PAGE_SIZE;	
 	    }
 
-	    for(i = 0; i < 20; i++){
+	    for(i = 0; i < FILE_COUNT; i++){
 	    	inode_address[i] = current_address;
 		current_address += PAGE_SIZE;	
 
 	    }
 
-	    for(i = 0; i < 20; i++){
+	    for(i = 0; i < FILE_COUNT; i++){
 		inode_size_address[i] = current_address; 
 		current_address += PAGE_SIZE;	
 
@@ -349,20 +366,20 @@ static int __init simplefs_init(void)
 	    inode_lock_address = current_address;
 	    current_address += PAGE_SIZE;	
 
-	    for(i = 0; i < 20; i++){
+	    for(i = 0; i < FILE_COUNT; i++){
 		//new_inode_lock_address[i-32] = combined_address[i];
 		new_inode_lock_address[i] = inode_address[i];
 	    }
 
 
 	    pr_info("read addresses:");
-	    for(i = 0; i < 20; i++){
+	    for(i = 0; i < FILE_SIZE; i++){
 		    pr_info("%ld, ", shmem_address[i]);
 	    }
 	    pr_info("\n");
 
             pr_info("inode addresses:");
-            for(i = 0; i < 20; i++){
+            for(i = 0; i < FILE_COUNT; i++){
                     pr_info("%ld, ", inode_address[i]);
             }
             pr_info("\n");
@@ -371,12 +388,12 @@ static int __init simplefs_init(void)
 	    pr_info("size lock address %ld, inode lock address %ld", size_lock_address, inode_lock_address);
 
             pr_info("inode size addresses:");
-            for(i = 0; i < 20; i++){
+            for(i = 0; i < FILE_COUNT; i++){
                     pr_info("%ld, ", inode_size_address[i]);
             }
 
             pr_info("new inode lock addresses:");
-            for(i = 0; i < 20; i++){
+            for(i = 0; i < FILE_COUNT; i++){
                     pr_info("%ld, ", new_inode_lock_address[i]);
             }
             pr_info("\n");
