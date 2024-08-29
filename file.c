@@ -68,7 +68,7 @@ struct shmem_coherence_state {
 extern struct rw_semaphore hash_page_rwsem;
 //extern spinlock_t * spin_inode_lock[10];
 extern void lock_loop(int ino, bool write);
-extern struct rw_semaphore * inode_rwlock[10];
+extern struct rw_semaphore * inode_rwlock[20];
 
 DEFINE_HASHTABLE(shmem_states, 8); // 8 = 256 buckets
 // Protects shmem_states and everything it references.
@@ -129,8 +129,8 @@ static struct shmem_coherence_state * shmem_in_hashmap(unsigned long shmem_addr)
 
 
 
-extern unsigned long shmem_address[10];
-extern unsigned long inode_address[10];
+extern unsigned long shmem_address[20];
+extern unsigned long inode_address[20];
 static bool invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page, bool readpage);
 
 

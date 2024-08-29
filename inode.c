@@ -53,13 +53,13 @@ static const struct inode_operations simplefs_inode_ops;
 static const struct inode_operations symlink_inode_ops;
 
 
-extern unsigned long shmem_address[10];
-extern unsigned long inode_address[10];
+extern unsigned long shmem_address[20];
+extern unsigned long inode_address[20];
 extern unsigned long size_lock_address; 
 //extern unsigned long inode_lock_address; 
-extern unsigned long new_inode_lock_address[10];
+extern unsigned long new_inode_lock_address[20];
 
-extern unsigned long inode_size_address[10];
+extern unsigned long inode_size_address[20];
 extern struct super_block * super_block;
 extern spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 
@@ -73,14 +73,15 @@ struct rw_semaphore testlock;
 //struct rw_semaphore rw_inode_lock;
 //DECLARE_RWSEM(rw_inode_lock);
 
-unsigned int remote_lock_status[10] = {0,0,0,0,0,0,0,0,0,0}; //0 not held, 1 read mode, 2 write mode
-unsigned int inode_size_status[10] = {0,0,0,0,0,0,0,0,0,0}; //0 not held, 1 read mode, 2 write mode
+unsigned int remote_lock_status[20] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //0 not held, 1 read mode, 2 write mode
+unsigned int inode_size_status[20] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}; //0 not held, 1 read mode, 2 write mode
+
 
 //extern struct rw_semaphore size_locks[10];
-extern spinlock_t * spin_size_lock[10];
-extern struct rw_semaphore * size_rwlock[10];
+extern spinlock_t * spin_size_lock[20];
+extern struct rw_semaphore * size_rwlock[20];
 //extern spinlock_t * spin_inode_lock[10];
-extern struct rw_semaphore * inode_rwlock[10];
+extern struct rw_semaphore * inode_rwlock[20];
 
 
 //DECLARE_RWSEM(rw_size_lock);
@@ -390,7 +391,7 @@ extern unsigned long inode_lock_address;
 		}
 	}
 	*/
-	for(i = 0; i < 10; i++){
+	for(i = 0; i < 20; i++){
 		if(addr == inode_size_address[i]){
 
 			return 1;
@@ -401,7 +402,7 @@ extern unsigned long inode_lock_address;
 		return 1;
 	}
 
-	for(i = 0; i < 10; i++){
+	for(i = 0; i < 20; i++){
 		if(addr == new_inode_lock_address[i]){
 			return 1;
 		}
@@ -433,7 +434,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    }
     }
 	*/
-   for(i = 0; i < 10; i++){
+   for(i = 0; i < 20; i++){
 	    if(addr == inode_size_address[i]){
 			//struct timespec time = current_kernel_time();
 		
@@ -479,7 +480,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    return 1;
     }
 
-    for(i = 0; i < 10; i ++){    
+    for(i = 0; i < 20; i ++){    
 	    if(addr == new_inode_lock_address[i]){
 		    //down_write(&(remote_inode_locks[i]));  
 		    //spin_lock(spin_inode_lock[i]);
