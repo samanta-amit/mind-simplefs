@@ -355,17 +355,17 @@ static int __init simplefs_init(void)
 		current_address += PAGE_SIZE;	
 
 	    }
+	    size_lock_address = current_address;
+	    current_address += PAGE_SIZE;	
+	    inode_lock_address = current_address;
+	    current_address += PAGE_SIZE;	
+
 
 	    for(i = 0; i < FILE_COUNT; i++){
 		inode_size_address[i] = current_address; 
 		current_address += PAGE_SIZE;	
 
 	    }
-	    size_lock_address = current_address;
-	    current_address += PAGE_SIZE;	
-	    inode_lock_address = current_address;
-	    current_address += PAGE_SIZE;	
-
 	    for(i = 0; i < FILE_COUNT; i++){
 		//new_inode_lock_address[i-32] = combined_address[i];
 		new_inode_lock_address[i] = inode_address[i];

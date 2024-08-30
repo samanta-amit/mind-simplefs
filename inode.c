@@ -437,6 +437,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	*/
    for(i = 0; i < FILE_COUNT; i++){
 	    if(addr == inode_size_address[i]){
+		    //pr_info("size was invalidated");
 			//struct timespec time = current_kernel_time();
 		
 			
@@ -454,6 +455,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	
 			invalidate_size_write(inode, i, inv_argv);
 			inode_size_status[i] = 0;
+			//pr_info("invalidated status %d", inode_size_status[i]);
 			//up_write(&(size_locks[i]));  
 			//spin_unlock((spin_size_lock[i]));	
 			up_write(size_rwlock[i]);
