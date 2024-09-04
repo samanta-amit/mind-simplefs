@@ -137,6 +137,9 @@ u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv);
 //lock sync
 void lock_loop(int ino, bool write);
 
+#define FILE_SIZE 20
+#define FILE_COUNT 20
+
 
 /* Getters for superbock and inode */
 #define SIMPLEFS_SB(sb) (sb->s_fs_info)
