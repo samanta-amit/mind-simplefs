@@ -131,7 +131,7 @@ static struct shmem_coherence_state * shmem_in_hashmap(unsigned long shmem_addr)
 
 extern unsigned long shmem_address[20];
 //extern unsigned long inode_address[20];
-static bool invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page, bool readpage);
+static int invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page, bool readpage);
 
 
 struct page_lock_status {
@@ -310,6 +310,7 @@ static int mind_fetch_page_write(
         int r;
         unsigned long start_time = jiffies;
 
+	pr_info("mind fetch page");
 	//spin_lock(&dummy_page_lock);
 
         ret_buf.data_size = PAGE_SIZE;
@@ -339,11 +340,13 @@ static int mind_fetch_page_write(
         pr_pgfault("CN [%d]: start waiting 0x%lx\n", get_cpu(), shmem_address);
         if(r <= 0){
                 cancel_waiting_for_nack(wait_node);
+		pr_info("failed waiting for nack");
 		BUG_ON(1);
 
 	}
         r = wait_ack_from_ctrl(wait_node, NULL, NULL, NULL);
 	if(r){
+		pr_info("wait ack from ctrl fail");
 		cancel_waiting_for_nack(wait_node);
 		return -1;
 		//BUG_ON(1);
@@ -774,8 +777,11 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 
 
 //TODO changed this so that it doesn't need page pointer
-static bool invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page, bool readpage){
+static int invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page, bool readpage){
+	pr_info("invalidate page write");
 	while(1){
+		pr_info("invalidate page write loop");
+
 		//struct page * testp = pagep;
 		uintptr_t inode_pages_address;
 		int r;
@@ -800,7 +806,10 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
 		size_t data_size;
 		void *buf = get_dummy_page_dma_addr(cpu_id);
 		r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+		pr_info("fetched page");
 		if(r == -1){
+			pr_info("fetched failure");
+
 			spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
 			return -1;
 		}
@@ -837,7 +846,7 @@ static bool invalidate_page_write(struct page * testp, struct file *file, struct
 		//spin_unlock(&dummy_page_lock);
 		//spin_unlock_irq(&mapping->tree_lock);
 
-		return true;
+		return 1;
 	}
 }
 
@@ -1624,6 +1633,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		
 		//radix_tree_lookup(&mapping->page_tree, coherence_state->pagenum);
 	if(pagep){
+		pr_info("found page");
 		//we don't need to lock the page 
 		//lock_page(pagep);
 
@@ -1635,21 +1645,23 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		//perform page invalidation stuff here
 		shmem_invalidate_page_write(coherence_state->mapping, testp, coherence_state->pagenum, inv_argv);
 		//delete_from_page_cache(testp);
-		//pr_info("before page invalidated %d", PageRemoteValid(testp));
+		pr_info("before page invalidated %d", PageRemoteValid(testp));
 
 		//mark page as invalid from remote system
 		ClearPageRemoteValid(testp);
-		//pr_info("page invalidated %d", PageRemoteValid(testp));
+		pr_info("page invalidated %d", PageRemoteValid(testp));
 		ClearPageUptodate(testp);
 		
 		//ClearPageDirty(testp);
 		//SetPageError(testp);
 		coherence_state->state = 0;
-		//pr_info("inode size was %d", coherence_state->mapping->host->i_size);
+		pr_info("inode size was %d", coherence_state->mapping->host->i_size);
 
 		//delete_from_page_cache(testp);
 		//unlock_page(pagep);
 	}else{
+		pr_info("didn't find page");
+
 		struct page * testp = NULL;
 		//this can also be reached if something has been truncated
 		shmem_invalidate_page_write(coherence_state->mapping, testp, coherence_state->pagenum, inv_argv);
@@ -1681,15 +1693,16 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv)
 {
 
-	//pr_info("started invalidation");
+	pr_info("started invalidation");
     down_read(&hash_page_rwsem);
     struct shmem_coherence_state * coherence_state = shmem_in_hashmap(addr);
 
     if(coherence_state != NULL){
-
+	    pr_info("found page to invalidate");
 	    down_write(&(coherence_state->rwsem)); //lock the page
 	    up_read(&hash_page_rwsem); //unlock the hashtable now
 	    shmem_invalidate(coherence_state, inv_argv);
+	    pr_info("finished invalidation");
 	    up_write(&(coherence_state->rwsem)); //lock the page
     }else{
 	    up_read(&hash_page_rwsem);
@@ -1806,12 +1819,16 @@ retry:
 			if(temp.old_state < READ){
 				//request access to page and then read the page 
 				//if we don't have in read mode then we are missing data
+				pr_info("invalidating page and reading");
 				result = invalidate_page_write(page, file, inode, currentpage, true);
 			}else{
+				pr_info("invalidating pageand not reading");
+
 				result = invalidate_page_write(page, file, inode, currentpage, false);
 			}
 		}
 		if(result == -1){
+			pr_info("failed to gain access");
 			//should probably only do this when we have it
 			//in write mode
 			temp.state->state = temp.old_state;
