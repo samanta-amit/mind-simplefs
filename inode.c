@@ -437,7 +437,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	*/
    for(i = 0; i < FILE_COUNT; i++){
 	    if(addr == inode_size_address[i]){
-		    pr_info("size was invalidated");
+		    //pr_info("size was invalidated");
 			//struct timespec time = current_kernel_time();
 		
 			
