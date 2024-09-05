@@ -780,7 +780,7 @@ static int simplefs_writepage(struct page *page, struct writeback_control *wbc)
 static int invalidate_page_write(struct page * testp, struct file *file, struct inode * inode, int page, bool readpage){
 	//pr_info("invalidate page write");
 	while(1){
-		pr_info("invalidate page write loop");
+		//pr_info("invalidate page write loop");
 
 		//struct page * testp = pagep;
 		uintptr_t inode_pages_address;
