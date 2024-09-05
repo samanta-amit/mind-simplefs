@@ -485,7 +485,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 
     for(i = 0; i < FILE_COUNT; i ++){    
 	    if(addr == new_inode_lock_address[i]){
-		    pr_info("inode lock invalidated");
+		    //pr_info("inode lock invalidated");
 		    //down_write(&(remote_inode_locks[i]));  
 		    //spin_lock(spin_inode_lock[i]);
 		    down_write(inode_rwlock[i]);
