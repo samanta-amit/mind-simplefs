@@ -75,8 +75,8 @@ DECLARE_RWSEM(srw17);
 DECLARE_RWSEM(srw18);
 DECLARE_RWSEM(srw19);
 */
-struct rw_semaphore size_test_rwlock[20];
-struct rw_semaphore * size_rwlock[20]; //= {&srw0,&srw1,&srw2,&srw3,&srw4,&srw5,&srw6,&srw7,&srw8,&srw9, &srw10,&srw11,&srw12,&srw13,&srw14,&srw15,&srw16,&srw17,&srw18,&srw19};
+struct rw_semaphore size_test_rwlock[FILE_COUNT];
+struct rw_semaphore * size_rwlock[FILE_COUNT]; //= {&srw0,&srw1,&srw2,&srw3,&srw4,&srw5,&srw6,&srw7,&srw8,&srw9, &srw10,&srw11,&srw12,&srw13,&srw14,&srw15,&srw16,&srw17,&srw18,&srw19};
 
 
 /*
@@ -107,8 +107,8 @@ DECLARE_RWSEM(l17);
 DECLARE_RWSEM(l18);
 DECLARE_RWSEM(l19);
 */
-struct rw_semaphore inode_test_rwlock[20];
-struct rw_semaphore * inode_rwlock[20];// = {&l0,&l1,&l2,&l3,&l4,&l5,&l6,&l7,&l8,&l9, &l10,&l11,&l12,&l13,&l14,&l15,&l16,&l17,&l18,&l19};
+struct rw_semaphore inode_test_rwlock[FILE_COUNT];
+struct rw_semaphore * inode_rwlock[FILE_COUNT];// = {&l0,&l1,&l2,&l3,&l4,&l5,&l6,&l7,&l8,&l9, &l10,&l11,&l12,&l13,&l14,&l15,&l16,&l17,&l18,&l19};
 
 
 
