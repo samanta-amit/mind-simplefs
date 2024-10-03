@@ -1914,8 +1914,8 @@ static const struct inode_operations simplefs_inode_ops = {
     
     .dfs_inode_lock = simple_dfs_inode_lock,
     .dfs_inode_unlock = simple_dfs_inode_unlock,
-   .dfs_i_size_read = simple_i_size_read,
-    .dfs_i_size_write = simple_i_size_write,
+   //.dfs_i_size_read = simple_i_size_read,
+    //.dfs_i_size_write = simple_i_size_write,
     
     .dfs_inode_lock_shared = simple_dfs_inode_lock_shared,
     .dfs_inode_unlock_shared = simple_dfs_inode_unlock_shared,
