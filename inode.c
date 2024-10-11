@@ -455,6 +455,10 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	
 			invalidate_size_write(inode, i, inv_argv);
 			inode_size_status[i] = 0;
+
+			//fast path setup
+			inode->i_size = -1234;
+
 			//pr_info("invalidated status %d", inode_size_status[i]);
 			//up_write(&(size_locks[i]));  
 			//spin_unlock((spin_size_lock[i]));	
@@ -1697,6 +1701,10 @@ int size_loop(int ino, bool write){
 int  test_counter = 0;
 
 loff_t simple_i_size_read(const struct inode *inode){
+	int tempsize = inode->i_size;
+	if(tempsize != -1234){
+		return tempsize;
+	}
 	if(inode->i_ino != 0){
 		int size = -1;
 		//spin_lock(&size_lock);
@@ -1914,8 +1922,8 @@ static const struct inode_operations simplefs_inode_ops = {
     
     .dfs_inode_lock = simple_dfs_inode_lock,
     .dfs_inode_unlock = simple_dfs_inode_unlock,
-   //.dfs_i_size_read = simple_i_size_read,
-    //.dfs_i_size_write = simple_i_size_write,
+    .dfs_i_size_read = simple_i_size_read,
+    .dfs_i_size_write = simple_i_size_write,
     
     .dfs_inode_lock_shared = simple_dfs_inode_lock_shared,
     .dfs_inode_unlock_shared = simple_dfs_inode_unlock_shared,
