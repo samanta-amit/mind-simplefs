@@ -302,7 +302,7 @@ int mind_fetch_page(
 }
 //atomic_t page_req_count = ATOMIC_INIT(10); 
 
-static int mind_fetch_page_write(
+int mind_fetch_page_write(
         uintptr_t shmem_address, void *page_dma_address, size_t *data_size)
 {
         struct fault_reply_struct ret_buf;

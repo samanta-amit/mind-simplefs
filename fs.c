@@ -359,7 +359,6 @@ static int __init simplefs_init(void)
 	    file_address = start_address;
 	    uintptr_t current_address = start_address + PAGE_SIZE; 
 
-	    uintptr_t current_address = start_address; 
 	    for(i = 0; i < FILE_COUNT; i++){
 	    	shmem_address[i] = current_address;
 	       current_address += FILE_SIZE * PAGE_SIZE;	

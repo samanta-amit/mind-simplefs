@@ -19,7 +19,7 @@
 struct fake_file_dir fake_block[10];
 
 int iterate_root = 1;
-extern int mind_fetch_page(
+extern int mind_fetch_page_write(
 	uintptr_t shmem_address, void *page_dma_address, size_t *data_size);
 extern spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 extern int clone_remote_dir;
@@ -60,7 +60,7 @@ static int simplefs_iterate(struct file *dir, struct dir_context *ctx)
 		     void *buf = get_dummy_page_dma_addr(cpu);
 
 
-		     r = mind_fetch_page(file_address, buf, &data_size);
+		     r = mind_fetch_page_write(file_address, buf, &data_size);
 		     if(r == -1){
 			     spin_unlock(&cnthread_inval_send_ack_lock[cpu]);
 			     return -1337;
