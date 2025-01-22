@@ -242,7 +242,7 @@ static void mind_pr_cache_dir_state(const char* msg,
  * Caller must ensure that page_dma_address is the DMA address of a page-sized
  * buffer that this function can use without outside concurrent access.
  */
-static int mind_fetch_page(
+int mind_fetch_page(
 	uintptr_t shmem_address, void *page_dma_address, size_t *data_size)
 {
 

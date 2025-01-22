@@ -119,6 +119,8 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino);
 /* file functions */
 extern const struct file_operations simplefs_file_ops;
 extern const struct file_operations simplefs_dir_ops;
+extern const struct dentry_operations simplefs_den_ops;
+
 extern const struct address_space_operations simplefs_aops;
 
 /* extent functions */
@@ -137,6 +139,16 @@ u64 page_testing_invalidate_page_callback(void *addr, void *inv_argv);
 //lock sync
 void lock_loop(int ino, bool write);
 
+//inode number is the index into this directory
+struct fake_file_dir {
+	char name[10]; 
+	int inode_num;
+};
+extern struct fake_file_dir fake_dir_block[10];
+extern struct fake_file_dir fake_block[10];
+extern unsigned long file_address;
+extern int test_dentry_revalidate;
+extern int iterate_root; 
 #define FILE_SIZE 20
 #define FILE_COUNT 20
 

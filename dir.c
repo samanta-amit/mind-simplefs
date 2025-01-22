@@ -5,7 +5,24 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 
+#include <../../include/disagg/cnthread_disagg.h>
+#include <../../include/disagg/exec_disagg.h>
+#include <../../include/disagg/fault_disagg.h>
+#include <../../mm/internal.h>
+#include <../../roce_modules/roce_for_disagg/roce_disagg.h>
+#include <asm/traps.h>
+#include <../include/disagg/kshmem_disagg.h>
+
+
 #include "simplefs.h"
+
+struct fake_file_dir fake_block[10];
+
+int iterate_root = 1;
+extern int mind_fetch_page(
+	uintptr_t shmem_address, void *page_dma_address, size_t *data_size);
+extern spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
+extern int clone_remote_dir;
 
 /*
  * Iterate over the files contained in dir and commit them in ctx.
@@ -23,6 +40,60 @@ static int simplefs_iterate(struct file *dir, struct dir_context *ctx)
     struct simplefs_file *f = NULL;
     int ei = 0, bi = 0, fi = 0;
     int ret = 0;
+     int i;
+     int r;
+
+     //don't want to keep reporting the same files if iterate is called again
+     if(iterate_root){
+
+	    //I think we want to request remote access here
+	    
+	     if(clone_remote_dir){
+		     int cpu = get_cpu();
+		     spin_lock(&cnthread_inval_send_ack_lock[cpu]);
+
+		     // TODO(stutsman): Why are we bothering with per-cpu buffers if we have
+		     // a single lock around all of them here. Likely we want a per-cpu
+		     // spinlock.
+		     size_t data_size;
+		     //void *buf = get_dummy_page_dma_addr(get_cpu());
+		     void *buf = get_dummy_page_dma_addr(cpu);
+
+
+		     r = mind_fetch_page(file_address, buf, &data_size);
+		     if(r == -1){
+			     spin_unlock(&cnthread_inval_send_ack_lock[cpu]);
+			     return -1337;
+		     }
+
+		     for(i = 0; i < 10; i++){	
+			     fake_block[i] = ((struct fake_file_dir *)get_dummy_page_buf_addr(cpu))[i];
+		     }
+
+
+		     spin_unlock(&cnthread_inval_send_ack_lock[cpu]);
+	     }
+	    pr_info("iterating over fake files");
+	    for(i = 0; i < 10; i++){
+
+		    if(fake_block[i].inode_num > 0){
+			    dir_emit(ctx, fake_block[i].name, SIMPLEFS_FILENAME_LEN,
+					    fake_block[i].inode_num, DT_UNKNOWN);
+			    ctx->pos++;
+
+			    pr_info("adding file %s", fake_block[i].name);
+		    }
+	    }
+	    pr_info("done iterating over fake files");
+	    brelse(bh);
+		iterate_root = 0;
+    }
+
+    return 0;
+
+
+
+
 
     /* Check that dir is a directory */
     if (!S_ISDIR(inode->i_mode))
@@ -85,7 +156,31 @@ release_bh:
     return ret;
 }
 
+
+int validation_test = 0;
+
+int test_revalidate(struct dentry *d , unsigned int test){
+	if((d->d_name.name)[0] == '/'){
+		pr_info("revalidate root");
+		if(test_dentry_revalidate == 1){
+			test_dentry_revalidate = 0;
+			pr_info("forcing revalidate root");
+
+			return 0;
+		}else{
+
+			return 1;
+		}
+	}else{
+		return 1;
+	}
+}
 const struct file_operations simplefs_dir_ops = {
     .owner = THIS_MODULE,
     .iterate_shared = simplefs_iterate,
 };
+
+const struct dentry_operations simplefs_den_ops = {
+	.d_revalidate = test_revalidate,
+};
+

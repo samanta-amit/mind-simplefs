@@ -206,6 +206,7 @@ int simplefs_fill_super(struct super_block *sb, void *data, int silent)
     sb_set_blocksize(sb, SIMPLEFS_BLOCK_SIZE);
     sb->s_maxbytes = SIMPLEFS_MAX_FILESIZE;
     sb->s_op = &simplefs_super_ops;
+    sb->s_d_op = &simplefs_den_ops;
 
     /* Read sb from disk */
     bh = sb_bread(sb, SIMPLEFS_SB_BLOCK_NR);

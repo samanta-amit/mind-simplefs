@@ -23,6 +23,10 @@
 
 
 unsigned long sharedaddress;
+unsigned long file_address;
+int test_dentry_revalidate = 0;
+int clone_remote_dir = 0;
+
 unsigned long shmem_address[FILE_SIZE];
 unsigned long inode_address[FILE_COUNT];
 unsigned long inode_size_address[FILE_COUNT];
@@ -154,6 +158,11 @@ static struct file_system_type simplefs_file_system_type = {
     .next = NULL,
 };
 
+
+//fake file directory 
+struct fake_file_dir fake_dir_block[10];
+
+
 static int __init simplefs_init(void)
 {
    pr_info("test invalidate page callback %d", testing_invalidate_page_callback);
@@ -198,8 +207,11 @@ static int __init simplefs_init(void)
 
     if(!readAddress){
 	    pr_info("test allocation");
-            uintptr_t start_address = (uintptr_t)alloc_kshmem(1000 * PAGE_SIZE, DISAGG_KSHMEM_SERV_FS_ID);
-	    uintptr_t current_address = start_address; 
+            uintptr_t start_address = (uintptr_t)alloc_kshmem(1001 * PAGE_SIZE, DISAGG_KSHMEM_SERV_FS_ID);
+
+	    //address used for file creation sync
+	    file_address = start_address;
+	    uintptr_t current_address = start_address + PAGE_SIZE; 
 	    pr_info("finished test allocation %ld", current_address);
 
 	    pr_info("addresses:");
@@ -344,6 +356,9 @@ static int __init simplefs_init(void)
     }else{
 
             uintptr_t start_address = combined_address[0]; 
+	    file_address = start_address;
+	    uintptr_t current_address = start_address + PAGE_SIZE; 
+
 	    uintptr_t current_address = start_address; 
 	    for(i = 0; i < FILE_COUNT; i++){
 	    	shmem_address[i] = current_address;

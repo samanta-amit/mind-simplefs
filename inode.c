@@ -51,6 +51,8 @@
 
 static const struct inode_operations simplefs_inode_ops;
 static const struct inode_operations symlink_inode_ops;
+extern int iterate_root;
+extern int clone_remote_dir;
 
 
 //extern unsigned long shmem_address[20];
@@ -225,6 +227,8 @@ static bool get_remote_lock_access(int inode_ino, unsigned long lock_address, bo
 }
 
 
+
+
 static bool invalidate_size_write(struct inode * inode, int inode_ino, void *inv_argv){
         uintptr_t inode_pages_address;
         int r;
@@ -392,6 +396,10 @@ extern unsigned long inode_lock_address;
 		}
 	}
 	*/
+	if(addr == file_address){
+		pr_info("INVALIDATING FILE");
+		return 1;
+	}
 	for(i = 0; i < FILE_COUNT; i++){
 		if(addr == inode_size_address[i]){
 
@@ -412,6 +420,68 @@ extern unsigned long inode_lock_address;
 	//check to see if this is a page address
 	return page_shmem_address_check(addr, size);
 }
+
+
+static bool invalidate_file_write(void *inv_argv){
+	int cpu_id = get_cpu();
+	int i;
+	int r;
+	struct mm_struct *mm;
+	mm = get_init_mm();
+	spinlock_t *ptl_ptr = NULL;
+	pte_t *temppte;
+	void *ptrdummy;
+	uintptr_t inode_pages_address = file_address; 
+
+	static struct cnthread_inv_msg_ctx send_ctx;
+
+        //spin_lock(&dummy_page_lock);
+
+       	spin_lock(&cnthread_inval_send_ack_lock[cpu_id]);
+
+        size_t data_size;
+        void *buf = get_dummy_page_dma_addr(cpu_id);
+
+        temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
+
+        ptrdummy = get_dummy_page_buf_addr(cpu_id);
+	if(temppte == NULL){	
+		pr_info("WHAT SHOULD WE DO IN THIS CASE?");
+	}else{
+	}
+
+
+	//NOTE: the data copy occurs here
+	for(i = 0; i < 10; i++){	
+		((struct fake_file_dir *)get_dummy_page_buf_addr(cpu_id))[i] = fake_block[i];
+	}
+
+	struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
+        struct cnthread_inv_msg_ctx *inv_ctx = &((struct cnthread_inv_argv *)inv_argv)->inv_ctx;
+	
+	rdma_ctx = &inv_ctx->rdma_ctx;
+	inv_ctx->original_qp = (rdma_ctx->ret & CACHELINE_ROCE_RKEY_QP_MASK) >> CACHELINE_ROCE_RKEY_QP_SHIFT;
+       
+	create_invalidation_rdma_ack(inv_ctx->inval_buf, rdma_ctx->fva, rdma_ctx->ret, rdma_ctx->qp_val);
+        *((u32 *)(&(inv_ctx->inval_buf[CACHELINE_ROCE_VOFFSET_TO_IP]))) = rdma_ctx->ip_val;
+
+	
+	u32 req_qp = (get_id_from_requester(inv_ctx->rdma_ctx.requester) * DISAGG_QP_PER_COMPUTE) + inv_ctx->original_qp;
+	
+	cn_copy_page_data_to_mn(DISAGG_KERN_TGID, mm, inode_pages_address,
+        temppte, CN_TARGET_PAGE, req_qp, buf);
+	
+        _cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
+        
+        cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
+
+
+
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+	return true;
+}
+
+
 
 
 atomic_t count=ATOMIC_INIT(10); 
@@ -435,6 +505,23 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	    }
     }
 	*/
+   if(addr == file_address){
+	pr_info("INVALIDATING FILE");
+
+	//copy the data from the directory block into shared memory
+	//and write that data back
+	
+	//set this to force revalidate directory entry for root
+	test_dentry_revalidate = 1;
+	clone_remote_dir = 1;
+	//force future directory read to iterate
+	iterate_root = 1;
+
+	//write the directory data to the shared memory
+	invalidate_file_write(addr);
+	return 1;
+   }
+
    for(i = 0; i < FILE_COUNT; i++){
 	    if(addr == inode_size_address[i]){
 		    //pr_info("size was invalidated");
@@ -621,6 +708,45 @@ static struct dentry *simplefs_lookup(struct inode *dir,
     struct simplefs_dir_block *dblock = NULL;
     struct simplefs_file *f = NULL;
     int ei, bi, fi;
+    int i;
+    int j;
+
+    for(i = 0; i < 10; i++){
+	    pr_info("trying fake index %d", i);
+	    //this picks the file
+	int found = 1;
+	for(j = 0; j < 4; j++){
+		if(fake_block[i].name[j] != dentry->d_name.name[j]){
+			found = 0;
+			break;
+		}
+
+	}
+	if(!found){
+		continue;
+	}
+
+	inode = simplefs_iget(sb, fake_block[i].inode_num);
+	brelse(bh);
+
+	/* Update directory access time */
+	dir->i_atime = current_time(dir);
+	mark_inode_dirty(dir);
+
+	/* Fill the dentry with the inode */
+	d_add(dentry, inode);
+	pr_info("file found: %s", fake_block[i].name);
+	pr_info("found fake index %d", i);
+	pr_info("found fake index %d", i);
+
+	return NULL;
+
+    }
+
+
+
+
+
 
     /* Check filename length */
     if (dentry->d_name.len > SIMPLEFS_FILENAME_LEN)
@@ -677,6 +803,9 @@ search_end:
 /* Create a new inode in dir */
 static struct inode *simplefs_new_inode(struct inode *dir, mode_t mode)
 {
+pr_info("new inode being created");
+	iterate_root = 1;
+
     struct inode *inode;
     struct simplefs_inode_info *ci;
     struct super_block *sb;
@@ -793,6 +922,7 @@ static int simplefs_create(struct inode *dir,
     struct buffer_head *bh, *bh2;
     int ret = 0, alloc = false, bno = 0;
     int ei = 0, bi = 0, fi = 0;
+	int x;
 
     /* Check filename length */
     if (strlen(dentry->d_name.name) > SIMPLEFS_FILENAME_LEN)
@@ -879,6 +1009,19 @@ static int simplefs_create(struct inode *dir,
 
     /* setup dentry */
     d_instantiate(dentry, inode);
+
+    //write data to the fake block 
+    //this is what is used in lookup
+    fake_block[inode->i_ino].inode_num = inode->i_ino;
+    for(x = 0; x < 10; x++){
+	if(dentry->d_name.name[x] == '\0'){
+		break;
+	}
+	fake_block[inode->i_ino].name[x] = dentry->d_name.name[x];
+    } 
+    pr_info("ADDED NEW FILE TO THE FAKE BLOCK %d %s", inode->i_ino, dentry->d_name.name);
+
+
 
     return 0;
 
