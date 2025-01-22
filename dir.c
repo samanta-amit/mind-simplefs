@@ -24,8 +24,10 @@ extern int mind_fetch_page_write(
 extern spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 extern int clone_remote_dir;
 
-void request_remote_dir(){
+void request_remote_dir(void){
 	int cpu = get_cpu();
+	int i;
+	int r;
 	spin_lock(&cnthread_inval_send_ack_lock[cpu]);
 
 	// TODO(stutsman): Why are we bothering with per-cpu buffers if we have
@@ -39,7 +41,7 @@ void request_remote_dir(){
 	r = mind_fetch_page_write(file_address, buf, &data_size);
 	if(r == -1){
 		spin_unlock(&cnthread_inval_send_ack_lock[cpu]);
-		return -1337;
+		return;
 	}
 
 	for(i = 0; i < 10; i++){	

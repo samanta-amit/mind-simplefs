@@ -53,7 +53,7 @@ static const struct inode_operations simplefs_inode_ops;
 static const struct inode_operations symlink_inode_ops;
 extern int iterate_root;
 extern int clone_remote_dir;
-extern void request_remote_dir();
+extern void request_remote_dir(void);
 
 //extern unsigned long shmem_address[20];
 //extern unsigned long inode_address[20];
