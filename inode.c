@@ -421,19 +421,20 @@ extern unsigned long inode_lock_address;
 	return page_shmem_address_check(addr, size);
 }
 
-
 static bool invalidate_file_write(void *inv_argv){
-	int cpu_id = get_cpu();
+        uintptr_t inode_pages_address;
+        int r;
+        struct mm_struct *mm;
+        mm = get_init_mm();
+        spinlock_t *ptl_ptr = NULL;
+        pte_t *temppte;
+        void *ptrdummy;
+        static struct cnthread_inv_msg_ctx send_ctx;
+        loff_t test = 20; 
 	int i;
-	int r;
-	struct mm_struct *mm;
-	mm = get_init_mm();
-	spinlock_t *ptl_ptr = NULL;
-	pte_t *temppte;
-	void *ptrdummy;
-	uintptr_t inode_pages_address = file_address; 
-
-	static struct cnthread_inv_msg_ctx send_ctx;
+        inode_pages_address = file_address; 
+	
+	int cpu_id = get_cpu();
 
         //spin_lock(&dummy_page_lock);
 
@@ -441,6 +442,8 @@ static bool invalidate_file_write(void *inv_argv){
 
         size_t data_size;
         void *buf = get_dummy_page_dma_addr(cpu_id);
+        //r = mind_fetch_page_write(inode_pages_address, buf, &data_size);
+        //BUG_ON(r);
 
         temppte = ensure_pte(mm, (uintptr_t)get_dummy_page_buf_addr(cpu_id), &ptl_ptr);
 
@@ -448,13 +451,19 @@ static bool invalidate_file_write(void *inv_argv){
 	if(temppte == NULL){	
 		pr_info("WHAT SHOULD WE DO IN THIS CASE?");
 	}else{
+        	//simplefs_kernel_page_read(testp, (void*)get_dummy_page_buf_addr(cpu_id), PAGE_SIZE, &test);
 	}
-
-
-	//NOTE: the data copy occurs here
 	for(i = 0; i < 10; i++){	
 		((struct fake_file_dir *)get_dummy_page_buf_addr(cpu_id))[i] = fake_block[i];
+		pr_info("writing name %s", ((struct fake_file_dir *)get_dummy_page_buf_addr(cpu_id))[i].name);
 	}
+
+
+        //for(i = 0; i < 20; i++){
+        //}
+
+
+        //spin_lock(ptl_ptr);
 
 	struct cnthread_rdma_msg_ctx *rdma_ctx = NULL;
         struct cnthread_inv_msg_ctx *inv_ctx = &((struct cnthread_inv_argv *)inv_argv)->inv_ctx;
@@ -477,9 +486,15 @@ static bool invalidate_file_write(void *inv_argv){
 
 
 
+	//spin_unlock(ptl_ptr);
 	spin_unlock(&cnthread_inval_send_ack_lock[cpu_id]);
+	//spin_unlock(&dummy_page_lock);
+	//spin_unlock_irq(&mapping->tree_lock);
 	return true;
 }
+
+
+
 
 
 
@@ -507,6 +522,10 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	*/
    if(addr == file_address){
 	pr_info("INVALIDATING FILE");
+	pr_info("INVALIDATING FILE");
+	pr_info("INVALIDATING FILE");
+	pr_info("INVALIDATING FILE");
+	pr_info("INVALIDATING FILE");
 
 	//copy the data from the directory block into shared memory
 	//and write that data back
@@ -518,7 +537,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 	iterate_root = 1;
 
 	//write the directory data to the shared memory
-	invalidate_file_write(addr);
+	invalidate_file_write(inv_argv);
 	return 1;
    }
 

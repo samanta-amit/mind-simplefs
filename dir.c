@@ -37,6 +37,12 @@ void request_remote_dir(void){
 	//void *buf = get_dummy_page_dma_addr(get_cpu());
 	void *buf = get_dummy_page_dma_addr(cpu);
 
+	pr_info("requesting remote file info");
+	pr_info("requesting remote file info");
+	pr_info("requesting remote file info");
+	pr_info("requesting remote file info");
+	pr_info("requesting remote file info");
+	pr_info("requesting remote file info");
 
 	r = mind_fetch_page_write(file_address, buf, &data_size);
 	if(r == -1){
@@ -46,6 +52,9 @@ void request_remote_dir(void){
 
 	for(i = 0; i < 10; i++){	
 		fake_block[i] = ((struct fake_file_dir *)get_dummy_page_buf_addr(cpu))[i];
+		if(fake_block[i].inode_num != 0){
+			pr_info("file string is %s", fake_block[i].name);
+		}
 	}
 
 
