@@ -88,6 +88,7 @@ static int simplefs_iterate(struct file *dir, struct dir_context *ctx)
 	    
 	     if(clone_remote_dir){
 		     request_remote_dir();
+		     clone_remote_dir = 0;
 	     }
 	    pr_info("iterating over fake files");
 	    for(i = 0; i < 10; i++){

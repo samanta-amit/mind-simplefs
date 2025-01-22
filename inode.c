@@ -943,7 +943,10 @@ static int simplefs_create(struct inode *dir,
     int ei = 0, bi = 0, fi = 0;
 	int x;
 
-	request_remote_dir();
+	if(clone_remote_dir){
+		request_remote_dir();
+		clone_remote_dir = 0;
+	}
 
 
     /* Check filename length */

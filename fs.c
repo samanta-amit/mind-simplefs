@@ -25,7 +25,7 @@
 unsigned long sharedaddress;
 unsigned long file_address;
 int test_dentry_revalidate = 0;
-int clone_remote_dir = 0;
+int clone_remote_dir = 1;
 
 unsigned long shmem_address[FILE_SIZE];
 unsigned long inode_address[FILE_COUNT];
