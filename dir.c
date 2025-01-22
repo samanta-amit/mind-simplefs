@@ -24,6 +24,33 @@ extern int mind_fetch_page_write(
 extern spinlock_t cnthread_inval_send_ack_lock[DISAGG_NUM_CPU_CORE_IN_COMPUTING_BLADE];
 extern int clone_remote_dir;
 
+void request_remote_dir(){
+	int cpu = get_cpu();
+	spin_lock(&cnthread_inval_send_ack_lock[cpu]);
+
+	// TODO(stutsman): Why are we bothering with per-cpu buffers if we have
+	// a single lock around all of them here. Likely we want a per-cpu
+	// spinlock.
+	size_t data_size;
+	//void *buf = get_dummy_page_dma_addr(get_cpu());
+	void *buf = get_dummy_page_dma_addr(cpu);
+
+
+	r = mind_fetch_page_write(file_address, buf, &data_size);
+	if(r == -1){
+		spin_unlock(&cnthread_inval_send_ack_lock[cpu]);
+		return -1337;
+	}
+
+	for(i = 0; i < 10; i++){	
+		fake_block[i] = ((struct fake_file_dir *)get_dummy_page_buf_addr(cpu))[i];
+	}
+
+
+	spin_unlock(&cnthread_inval_send_ack_lock[cpu]);
+
+}
+
 /*
  * Iterate over the files contained in dir and commit them in ctx.
  * This function is called by the VFS while ctx->pos changes.
@@ -49,29 +76,7 @@ static int simplefs_iterate(struct file *dir, struct dir_context *ctx)
 	    //I think we want to request remote access here
 	    
 	     if(clone_remote_dir){
-		     int cpu = get_cpu();
-		     spin_lock(&cnthread_inval_send_ack_lock[cpu]);
-
-		     // TODO(stutsman): Why are we bothering with per-cpu buffers if we have
-		     // a single lock around all of them here. Likely we want a per-cpu
-		     // spinlock.
-		     size_t data_size;
-		     //void *buf = get_dummy_page_dma_addr(get_cpu());
-		     void *buf = get_dummy_page_dma_addr(cpu);
-
-
-		     r = mind_fetch_page_write(file_address, buf, &data_size);
-		     if(r == -1){
-			     spin_unlock(&cnthread_inval_send_ack_lock[cpu]);
-			     return -1337;
-		     }
-
-		     for(i = 0; i < 10; i++){	
-			     fake_block[i] = ((struct fake_file_dir *)get_dummy_page_buf_addr(cpu))[i];
-		     }
-
-
-		     spin_unlock(&cnthread_inval_send_ack_lock[cpu]);
+		     request_remote_dir();
 	     }
 	    pr_info("iterating over fake files");
 	    for(i = 0; i < 10; i++){

@@ -53,7 +53,7 @@ static const struct inode_operations simplefs_inode_ops;
 static const struct inode_operations symlink_inode_ops;
 extern int iterate_root;
 extern int clone_remote_dir;
-
+extern void request_remote_dir();
 
 //extern unsigned long shmem_address[20];
 //extern unsigned long inode_address[20];
@@ -923,6 +923,9 @@ static int simplefs_create(struct inode *dir,
     int ret = 0, alloc = false, bno = 0;
     int ei = 0, bi = 0, fi = 0;
 	int x;
+
+	request_remote_dir();
+
 
     /* Check filename length */
     if (strlen(dentry->d_name.name) > SIMPLEFS_FILENAME_LEN)
