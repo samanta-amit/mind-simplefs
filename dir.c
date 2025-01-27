@@ -177,9 +177,10 @@ release_bh:
 int validation_test = 0;
 
 int test_revalidate(struct dentry *d , unsigned int test){
-	if((d->d_name.name)[0] == '/'){
-		pr_info("revalidate root");
-		if(test_dentry_revalidate == 1){
+		if(d->d_name.name[0] != 't'){
+			return 1;
+		}
+		if(validation_test % 2 == 0){
 			test_dentry_revalidate = 0;
 			pr_info("forcing revalidate root");
 
@@ -188,9 +189,6 @@ int test_revalidate(struct dentry *d , unsigned int test){
 
 			return 1;
 		}
-	}else{
-		return 1;
-	}
 }
 const struct file_operations simplefs_dir_ops = {
     .owner = THIS_MODULE,

@@ -631,6 +631,7 @@ u64 testing_invalidate_page_callback(void *addr, void *inv_argv)
 /* Get inode ino from disk */
 struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
 {
+	pr_info("getting inode %d", ino);
     struct inode *inode = NULL;
     struct simplefs_inode *cinode = NULL;
     struct simplefs_inode_info *ci = NULL;
@@ -641,24 +642,31 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
     int ret;
 
     /* Fail if ino is out of range */
-    if (ino >= sbi->nr_inodes)
+    if (ino >= sbi->nr_inodes){
+	    pr_info("inode out of range");
         return ERR_PTR(-EINVAL);
+    }
 
     /* Get a locked inode from Linux */
     inode = iget_locked(sb, ino);
-    if (!inode)
+    if (!inode){
+	    pr_info("no inode");
         return ERR_PTR(-ENOMEM);
+    }
 
     int test = rwsem_is_locked(&inode->i_rwsem);
 
     /* If inode is in cache, return it */
-    if (!(inode->i_state & I_NEW))
+    if (!(inode->i_state & I_NEW)){
+	    pr_info("inode in cache");
         return inode;
+    }
 
     ci = SIMPLEFS_INODE(inode);
     /* Read inode from disk and initialize */
     bh = sb_bread(sb, inode_block);
     if (!bh) {
+	    pr_info("FAILED TO READ FROM DISK");
         ret = -EIO;
         goto failed;
     }
@@ -672,14 +680,18 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
     inode->i_mode = le32_to_cpu(cinode->i_mode);
     i_uid_write(inode, le32_to_cpu(cinode->i_uid));
     i_gid_write(inode, le32_to_cpu(cinode->i_gid));
-    inode->i_size = le32_to_cpu(cinode->i_size);
+    inode->i_size = -1234;
+    i_size_read(inode);
+    inode->i_blocks = inode->i_size / SIMPLEFS_BLOCK_SIZE + 2;
+
+    //inode->i_size = le32_to_cpu(cinode->i_size);
     inode->i_ctime.tv_sec = (time64_t) le32_to_cpu(cinode->i_ctime);
     inode->i_ctime.tv_nsec = 0;
     inode->i_atime.tv_sec = (time64_t) le32_to_cpu(cinode->i_atime);
     inode->i_atime.tv_nsec = 0;
     inode->i_mtime.tv_sec = (time64_t) le32_to_cpu(cinode->i_mtime);
     inode->i_mtime.tv_nsec = 0;
-    inode->i_blocks = le32_to_cpu(cinode->i_blocks);
+    //inode->i_blocks = le32_to_cpu(cinode->i_blocks);
     set_nlink(inode, le32_to_cpu(cinode->i_nlink));
 
     if (S_ISDIR(inode->i_mode)) {
@@ -701,12 +713,13 @@ struct inode *simplefs_iget(struct super_block *sb, unsigned long ino)
 
     //only for the i_lock not the rwsem lock
     unlock_new_inode(inode);
-
+	pr_info("returning inode");
     return inode;
 
 failed:
     brelse(bh);
     iget_failed(inode);
+    pr_info("inode failed");
     return ERR_PTR(ret);
 }
 
@@ -720,6 +733,9 @@ static struct dentry *simplefs_lookup(struct inode *dir,
                                       unsigned int flags)
 {
     struct super_block *sb = dir->i_sb;
+    struct simplefs_sb_info *sbi = SIMPLEFS_SB(sb);
+
+    struct simplefs_inode_info *ci;
     struct simplefs_inode_info *ci_dir = SIMPLEFS_INODE(dir);
     struct inode *inode = NULL;
     struct buffer_head *bh = NULL, *bh2 = NULL;
@@ -727,9 +743,11 @@ static struct dentry *simplefs_lookup(struct inode *dir,
     struct simplefs_dir_block *dblock = NULL;
     struct simplefs_file *f = NULL;
     int ei, bi, fi;
+    uint32_t ino, bno;
     int i;
     int j;
 
+    pr_info("file lookup %s", dentry->d_name.name);
     for(i = 0; i < 10; i++){
 	    pr_info("trying fake index %d", i);
 	    //this picks the file
@@ -737,6 +755,7 @@ static struct dentry *simplefs_lookup(struct inode *dir,
 	for(j = 0; j < 4; j++){
 		if(fake_block[i].name[j] != dentry->d_name.name[j]){
 			found = 0;
+			pr_info("failed on %s", fake_block[i].name);
 			break;
 		}
 
@@ -746,7 +765,48 @@ static struct dentry *simplefs_lookup(struct inode *dir,
 	}
 
 	inode = simplefs_iget(sb, fake_block[i].inode_num);
-	brelse(bh);
+	inode->i_mode = 33188;
+
+	ci = SIMPLEFS_INODE(inode);
+
+	/* Get a free block for this new inode's index */
+	bno = get_free_blocks(sbi, 1);
+	if (!bno) {
+		pr_info("FAILED TO GET FREE BLOCK");
+	}
+
+	/* Initialize inode */
+#if USER_NS_REQUIRED()
+	inode_init_owner(&init_user_ns, inode, dir, 33188);
+#else
+	inode_init_owner(inode, dir, 33188);
+#endif
+	//inode->i_blocks = 2;//?
+	ci->ei_block = bno;
+	//inode->i_size = 0;
+	//probably should read the size?
+	//pr_info("writing i_size on new inode");	
+	//i_size_write(inode, 0);
+	inode->i_fop = &simplefs_file_ops;
+	inode->i_mapping->a_ops = &simplefs_aops;
+	inode->i_size = i_size_read(inode);
+	inode->i_blocks = inode->i_size / SIMPLEFS_BLOCK_SIZE + 2;
+	pr_info("-------------------");
+	pr_info("inode lookup size %d for inode %d", inode->i_size, inode->i_ino);
+	pr_info("-------------------");
+
+
+	set_nlink(inode, 1);
+
+	inode->i_ctime = inode->i_atime = inode->i_mtime = current_time(inode);
+
+
+
+
+
+	//initialize "new" inode
+
+//	brelse(bh);
 
 	/* Update directory access time */
 	dir->i_atime = current_time(dir);
@@ -822,7 +882,7 @@ search_end:
 /* Create a new inode in dir */
 static struct inode *simplefs_new_inode(struct inode *dir, mode_t mode)
 {
-pr_info("new inode being created");
+pr_info("new inode being created mode %d", mode);
 	iterate_root = 1;
 
     struct inode *inode;
@@ -1735,6 +1795,7 @@ void simple_dfs_inode_lock_nested(struct inode *inode, unsigned subclass){
 
 static int get_remote_size_access(int inode_ino, bool write){
 
+	pr_info("get remote size access");
         uintptr_t inode_pages_address;
         int r;
         struct mm_struct *mm;
@@ -1807,9 +1868,11 @@ static int get_remote_size_access(int inode_ino, bool write){
 int size_loop(int ino, bool write){
 	//return -1; //testing removing this
 
+	pr_info("requesting i size for inode %d", ino);
 	//first try to see if we can get away with not acquring lock in write mode
 	down_read(size_rwlock[ino]);
 	if((write && inode_size_status[ino] == 2) || (!write && inode_size_status[ino] >= 1)){
+	pr_info("already had it");
 
 		return -2;
 	}
@@ -1830,6 +1893,8 @@ int size_loop(int ino, bool write){
 		//down_write(&rw_size_lock);
 
 		if((write && inode_size_status[ino] == 2) || (!write && inode_size_status[ino] >= 1)){
+	pr_info("someone else got it");
+
 			return -1;
 		}else{
 
@@ -1851,6 +1916,8 @@ int size_loop(int ino, bool write){
 				inode_size_status[ino] = 1; //read
 
 			}
+	pr_info("finished request");
+
 
 			return result;
 		}
@@ -1869,11 +1936,20 @@ int size_loop(int ino, bool write){
 int  test_counter = 0;
 
 loff_t simple_i_size_read(const struct inode *inode){
+	pr_info("requesting i_size_read inode %d", inode->i_ino);
+
 	int tempsize = inode->i_size;
 	if(tempsize != -1234){
 		return tempsize;
 	}
 	if(inode->i_ino != 0){
+		pr_info("requesting i_size_read");
+		pr_info("requesting i_size_read");
+		pr_info("requesting i_size_read");
+		pr_info("requesting i_size_read");
+		pr_info("requesting i_size_read");
+		pr_info("requesting i_size_read");
+
 		int size = -1;
 		//spin_lock(&size_lock);
 

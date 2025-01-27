@@ -618,11 +618,12 @@ do {
  */
 static int simplefs_readpage(struct file *file, struct page *page)
 {
-
+	pr_info("READPAGE CALLED");
 	struct buffer_head bh;
 	uintptr_t inode_pages_address;
 	int r;
 	int i;
+	int j;
 	const struct address_space *mapping = file->f_mapping;
 
 
@@ -630,6 +631,7 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	inode_pages_address = shmem_address[mapping->host->i_ino] +
 				(PAGE_SIZE * (page->index));
 
+	pr_info("requesting page %d from inode %d", page->index, mapping->host->i_ino);
 	//page is locked here in either read or write mode
 
 	//page is locked for write now should always be locked for write
@@ -642,9 +644,11 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	bh.b_page = page;
 
 
+	pr_info("1");
 	//spin_lock(&dummy_page_lock);
 	int cpu = get_cpu();
 	spin_lock(&cnthread_inval_send_ack_lock[cpu]);
+	pr_info("2");
 
 	// TODO(stutsman): Why are we bothering with per-cpu buffers if we have
 	// a single lock around all of them here. Likely we want a per-cpu
@@ -652,23 +656,34 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	size_t data_size;
 	//void *buf = get_dummy_page_dma_addr(get_cpu());
 	void *buf = get_dummy_page_dma_addr(cpu);
+	pr_info("3");
 
 
 	r = mind_fetch_page(inode_pages_address, buf, &data_size);
+	pr_info("4");
+
 	if(r == -1){
+		pr_info("failed to fetch readpage");
 		spin_unlock(&cnthread_inval_send_ack_lock[cpu]);
 		//spin_unlock(&dummy_page_lock);
 		unlock_page(page);
 		return -1337;
 	}
+	/*for(j = 0; j < 10; j++){
+		pr_info("reading %c", ((char*)buf)[j]);
+	}*/
+	pr_info("5");
+
 	set_buffer_mapped(&bh);
 	set_buffer_uptodate(&bh);
+	pr_info("6");
 
 	// If this page doesn't have buffers yet, 
 	// 0 below is the index of this block in the page; always 0 here
 	// since this file system always has block size == page size.
 	map_buffer_to_page(page, &bh, 0);
 	SetPageUptodate(page);
+	pr_info("7");
 
 	BUG_ON(!PageUptodate(page));
 	
@@ -677,6 +692,8 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	SetPageRemoteValid(page);
 	
 	simplefs_kernel_page_write(page, get_dummy_page_buf_addr(cpu), PAGE_SIZE, 0);
+	pr_info("8");
+
 	//simplefs_kernel_page_write(page, buf, PAGE_SIZE, 0);
 
 
