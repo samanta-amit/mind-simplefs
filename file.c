@@ -424,7 +424,7 @@ ssize_t simplefs_kernel_page_write(struct page * testpage, void * buf, size_t co
 	iov.iov_len = count; //from new_sync_read
 	iov_iter_init(&iter, READ, &iov, 1, count); //also from new_sync_read
 
-
+	//pr_info("read from inode %d buffer %d\n", testpage->mapping->host->i_ino, ((int * )buf)[0]);
 	//actually copy the data to the page
         result = copy_page_from_iter(testpage, 0, count, &iter);
 
@@ -645,6 +645,8 @@ static int simplefs_readpage(struct file *file, struct page *page)
 	//spin_lock(&dummy_page_lock);
 	int cpu = get_cpu();
 	spin_lock(&cnthread_inval_send_ack_lock[cpu]);
+
+	//TODO 
 
 	// TODO(stutsman): Why are we bothering with per-cpu buffers if we have
 	// a single lock around all of them here. Likely we want a per-cpu
@@ -1163,9 +1165,16 @@ find_page:
 				//pr_info("pipes");
 
 				goto page_not_up_to_date;
+
+			temp_status = acquire_page_lock(filp, mapping->host, index, inode_pages_address, mapping, READ);
 			if (!trylock_page(page))
 				//pr_info("trylock failed");
-
+				//HOTOS release here
+				if(temp_status.page_lock){
+					up_write(&(temp_status.state->rwsem));
+				}else{
+					up_read(&(temp_status.state->rwsem));
+				}
 				goto page_not_up_to_date;
 			/* Did it get truncated before we got the lock? */
 			if (!page->mapping)
@@ -1173,6 +1182,12 @@ find_page:
 			if (!mapping->a_ops->is_partially_uptodate(page,
 							offset, iter->count))
 				goto page_not_up_to_date_locked;
+			//HOTOS release here
+			if(temp_status.page_lock){
+				up_write(&(temp_status.state->rwsem));
+			}else{
+				up_read(&(temp_status.state->rwsem));
+			}
 			unlock_page(page);
 		}
 page_ok:
@@ -1386,6 +1401,7 @@ no_cached_page:
 would_block:
 	error = -EAGAIN;
 out:
+	//pr_info("reading page from inode %d\n",mapping->host->i_ino);
 	ra->prev_pos = prev_index;
 	ra->prev_pos <<= PAGE_SHIFT;
 	ra->prev_pos |= prev_offset;
@@ -1599,7 +1615,10 @@ static bool shmem_invalidate_page_write(struct address_space * mapping, struct p
         temppte, CN_TARGET_PAGE, req_qp, buf);
 	
         _cnthread_send_inval_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx->inval_buf);
-        
+      	if(testp != NULL){
+		ClearPageRemoteValid(testp);
+	}	
+
         cnthread_send_finish_ack(DISAGG_KERN_TGID, inode_pages_address, inv_ctx, 1);
 	
 	//spin_unlock(ptl_ptr);
@@ -1633,7 +1652,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		
 		//radix_tree_lookup(&mapping->page_tree, coherence_state->pagenum);
 	if(pagep){
-		//pr_info("found page");
+		//pr_info("invalidating page from inode %d\n", mapping->host->i_ino);
 		//we don't need to lock the page 
 		//lock_page(pagep);
 
@@ -1641,7 +1660,9 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 			pr_info("PAGE NOT UP TO DATE?");
 		}
 		struct page * testp = pagep;
-		
+
+		//mark page as invalid from remote system
+		ClearPageRemoteValid(testp);
 		//perform page invalidation stuff here
 		shmem_invalidate_page_write(coherence_state->mapping, testp, coherence_state->pagenum, inv_argv);
 		//delete_from_page_cache(testp);
@@ -1651,7 +1672,8 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		ClearPageRemoteValid(testp);
 		//pr_info("page invalidated %d", PageRemoteValid(testp));
 		ClearPageUptodate(testp);
-		
+		//pr_info("page invalidated from inode %d\n", mapping->host->i_ino);
+	
 		//ClearPageDirty(testp);
 		//SetPageError(testp);
 		coherence_state->state = 0;
@@ -2048,4 +2070,5 @@ const struct file_operations simplefs_file_ops = {
     .write_iter = simplefs_generic_file_write_iter,
     .fsync = generic_file_fsync,
 };
+
 
