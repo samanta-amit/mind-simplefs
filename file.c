@@ -1654,7 +1654,9 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 	if(pagep){
 		//pr_info("invalidating page from inode %d\n", mapping->host->i_ino);
 		//we don't need to lock the page 
-		//lock_page(pagep);
+		//probably should though
+
+		lock_page(pagep);
 
 		if(!PageUptodate(pagep)){
 			pr_info("PAGE NOT UP TO DATE?");
@@ -1680,7 +1682,7 @@ static bool shmem_invalidate(struct shmem_coherence_state * coherence_state, voi
 		//pr_info("inode size was %d", coherence_state->mapping->host->i_size);
 
 		//delete_from_page_cache(testp);
-		//unlock_page(pagep);
+		unlock_page(pagep);
 	}else{
 		//pr_info("didn't find page");
 
